@@ -1,0 +1,940 @@
+---
+title: "Fundamentos de Estadística"
+author: "Por: Luis Alpizar (121369), Salvador García (119718) y Mario Rodríguez (164471)"
+output: html_document
+---
+
+## Examen Parcial {.tabset .tabset-fade}
+
+### Setup
+
+Llamamos a todas nuestras librerías:
+```{r setup, include=TRUE, cache=FALSE}
+knitr::opts_chunk$set(error = TRUE)
+library(tidyverse)
+library(janitor)
+library(kableExtra)
+library(patchwork)
+library(gridExtra)
+library(MASS)
+library(GGally)
+library(huxtable)
+library(purrr)
+library(data.table)
+library(nullabor)
+library(rsample)
+library(Hmisc)
+library(readr)
+library(formattable)
+```
+
+### 1. NBER TH
+
+Considera la tabla de datos dada en tabla_nber_th.csv. Es la tabla de frecuencias de 4353 pilotos de la segunda guerra mundial, donde los individuos están clasificados según:
+
+  * Tipo de ocupación en 1969. SE significa self-employed.  
+  * Resultados de estudios de aptitud de 1943 (A5 es el nivel más alto, y A1 el más bajo).  
+  * Nivel de educación en 1969 (esta incluye años de escuela en 1943 más estudios posteriores a la guerra). E4 es el nivel más alto y E1 es el nivel más bajo.
+  
+```{r 1, include=TRUE}
+tabla_nber_th <- read_csv("tabla_nber_th.csv") #Importamos la tabla a analizar
+head(tabla_nber_th) #Observamos primeros registros
+```  
+1. ¿Qué relación existe entre aptitud (1943) y el nivel de educación (1969)? Describe esta relación usando tablas de porcentajes y de índices (o perfiles).
+
+**Tabla de Porcentajes:**
+
+Creamos una tabla cruzando aptitud y educación. Se sumariza por el total de la frecuencia:
+
+```{r 1.1, include=TRUE}
+rel <- tabla_nber_th %>%
+  group_by(Aptitude, Education) %>%
+  dplyr::summarise(sum_Freq = sum(Freq),.groups = 'drop') %>% spread(Education, sum_Freq)#sumamos la frecuencia agrupada por Aptutud y Educación
+rel
+``` 
+
+Observamos la distribución de la frecuencia y calculamos porcentajes POR FILAS, partiendo del nivel de aptitud de forma que las relaciones sean comparables:
+
+```{r 1.12, include=TRUE}
+rel_filas<- rel %>%
+  adorn_percentages("row")%>%
+  adorn_title("combined", row_name = "Aptitude", col_name = "Education")
+#A través de las funciones adorn de la librería Tabyl podemos calcular porcentajes por filas de forma que podamos observar la relación de las variables por la frecuencia, en este caso partiendo desde el nivel de Aptitud.
+
+rel_filas_h<-as_hux(rel_filas) #convertimos la tabla a un objeto huxtable lo que nos permite agregar colores
+
+rel_filas_h %>% 
+      map_text_color(-(1:0), -1, #agregamos formato condicional por colores para visualizar porcentajes
+        by_colorspace("darkred", "orange","lightgreen", "darkgreen", colwise = FALSE)
+      )
+
+``` 
+
+Al analizar la distribución porcentual de la frecuencia entre niveles de aptitud y de educación podemos deducir que existe una relación directa:
+
+  * Los pilotos con resultados mayores en las pruebas de aptitud (A4 y A5) tuvieron un mayor nivel de educación en 1969 (E3 y E4).
+  * Los pilotos con un nivel medio de aptitud (A3) están dIstribuidos de una forma mucho más uniforme entre los niveles de educación de 1969.
+  * Los pilotos con niveles bajos de aptitud (A1 y A2) tuvieron los menores niveles educativos en 1969 (E1 y E2).
+
+
+**Tabla de Perfiles:**
+
+Para perfilar creamos una tabla para calcular el perfilamiento cruzando aptitud y educación. Se obtiene "n" sumarizando por el total de la frecuencia.
+
+```{r 1.13, include=TRUE}
+num_grupos <- n_distinct(tabla_nber_th %>% dplyr::select(Aptitude)) #calculamos el #de grupos
+perfilamiento <- tabla_nber_th %>%
+  group_by(Aptitude, Education) %>%
+  dplyr::summarise(n = sum(Freq)) %>% #Sumamos las frecuencias por combinaciones de Aptitud y Educación
+  mutate(prop_Education = (100 * n / sum(n))) %>% #Obtenemos el porcentaje de cada combinación
+  group_by(Education) %>%
+  #Por último obtenemos la proporción del promedio y el perfil agrupando por la educación.
+  mutate(prom_prop = sum(prop_Education)/num_grupos) %>% 
+  mutate(perfil = 100 * (prop_Education / prom_prop - 1))
+perfilamiento
+``` 
+
+Procedemos a realizar los cálculos con la variable perfil de forma que podamos mostrar en una tabla el perfilamiento:
+
+```{r 1.13perf, include=TRUE}
+perfiles <- perfilamiento %>%
+  group_by(Education, Aptitude) %>%
+  dplyr::summarise(sum_perfil = sum(perfil),.groups = 'drop') %>% spread(Aptitude, sum_perfil)%>% #sumamos el valor de perfil sumarizado por la Educación y la Aptitud.
+  adorn_title("combined", row_name = "Education", col_name = "Aptitude")
+
+perfiles_h<-as_hux(perfiles) #convertimos la tabla a un objeto huxtable lo que nos permite agregar colores
+
+
+perfiles_h %>% 
+      map_text_color(-(1:0), -1, #agregamos formato condicional por colores para visualizar porcentajes
+        by_colorspace("darkred", "orange", "lightgreen", "darkgreen", colwise = FALSE)
+      )
+
+``` 
+**Leemos esta tabla como sigue:** los pilotos, por ejemplo, con un nivel de Aptitud alto (A5) realizaron estudios avanzados (E4) a una tasa superior a casi la mitad (46.9%) que el promedio. La conclusión de los resultados es muy similar a la tabla de porcentajes.
+
+
+2. Describe la relación entre nivel de educación y ocupación ¿Qué concluyes de esta relación? ¿Cuáles dirías que son ocupaciones asociadas a educación alta y cuáles a educación baja?
+
+```{r 1.2, include=TRUE}
+
+rel_ocupacion <- tabla_nber_th %>%
+  group_by(Ocup_group, Education) %>%
+  dplyr::summarise(sum_Freq = sum(Freq),.groups = 'drop') %>% spread(Education, sum_Freq)
+#Creamos una tabla cruzando Ocupación y educación. Se sumariza por el total de la frecuencia.
+
+rel_ocup_filas<- rel_ocupacion %>%
+  adorn_percentages("row")%>%
+  adorn_title("combined", row_name = "Occupation", col_name = "Education")
+#Replicamos el mismo cálculo de porcentajes del inciso anterior
+
+rel_ocup_filas_h<-as_hux(rel_ocup_filas) #convertimos la tabla a un objeto huxtable lo que nos permite agregar colores
+
+rel_ocup_filas_h %>% 
+      map_text_color(-(1:0), -1, #agregamos formato condicional por colores para visualizar porcentajes
+        by_colorspace("darkred", "orange", "yellow", "lightgreen", "darkgreen", colwise = FALSE)
+      )
+
+```  
+
+  * Las ocupaciones de maestro y profesional están asociadas con un nivel educativo alto (encontrándose la mayor parte los pilotos de ambas ocupaciones en el nivel E4).
+  * Las profesiones de negocio propio y empleado asalariado se distribuyen más uniformemente entre niveles educativos bajos y medios (E1, E2 y E3).
+
+### 2. Cereales
+Usa el conjunto de datos UScereal (que está en R, en el paquete MASS, ver ?UScereal) para contestar las siguientes preguntas:
+
+```{r 2, include=TRUE}
+data(UScereal)
+
+ #Incluímos nombre de fabricante completo para facilitar la lectura e interpretación de resultados.
+UScereal$mfr <- gsub(pattern = "P", replacement = "Post", x = UScereal$mfr)
+UScereal$mfr <- gsub(pattern = "A", replacement = "American Home Food Products", x = UScereal$mfr)
+UScereal$mfr <- gsub(pattern = "G", replacement = "General Mills", x = UScereal$mfr)
+UScereal$mfr <- gsub(pattern = "K", replacement = "Kellogs", x = UScereal$mfr)
+UScereal$mfr <- gsub(pattern = "N", replacement = "Nabisco", x = UScereal$mfr)
+UScereal$mfr <- gsub(pattern = "Q", replacement = "Quaker Oats", x = UScereal$mfr)
+UScereal$mfr <- gsub(pattern = "R", replacement = "Ralston Purina", x = UScereal$mfr)
+
+head(UScereal)
+summary(UScereal)
+```  
+
+1. Describe la distribución del contenido de potasio y de fibra de los cereales. ¿Existe o no dispersión suficiente en estos datos para que la elección de cereal pueda tener algún efecto nutricional (busca una tabla de requerimientos mínimos, por ejemplo)?
+
+Conforme a la definición oficial del dataset:
+
+  * Fibra: Gramos de fibra en una porción.
+  * Potasio: Gramos de potasio en una porción. **Nota:** Al observar la escala y magnitud del potasio en cada uno de los cereales y compararla con tablas de requerimientos mínimos llegamos a la conclusión de que este dato se está reportando en Miligramos
+
+  * De acuerdo a la FDA: (https://www.fda.gov/food/new-nutrition-facts-label/daily-value-new-nutrition-and-supplement-facts-labels#:~:text=First%2C%20let%27s%20look%20at%20how,contributes%20to%20your%20daily%20diet.) **los requerimientos mínimos diarios de Fibra y Potasio son:**
+
+**Fibra: 28g**
+**Potasio: 4700mg**
+
+Calculamos porcentaje de valor nutricional diario y lo redondeamos. Creamos tabla UScereal2 para agregar columnas libremente:
+
+```{r 2.1, include=TRUE}
+UScereal2<-UScereal %>%
+  mutate(fibre_daily =  round(fibre / 28,2)) %>%
+  mutate(potassium_daily =  round(potassium / 4700,2))
+```  
+
+Generamos histogramas para observar las frecuencias del Potasio y la Fibra así como boxblots por fabricante:
+
+```{r 2.12, include=TRUE}
+
+#Histograma en GGplot para el Potasio 
+Hist_Pot1<-ggplot(data=UScereal2, aes(potassium)) + geom_histogram() +
+  labs(title = "Distribución por Potasio (mg por porción) para cada uno de los 65 cereales", x = "Miligramos de Potasio por porción", y = "Frecuencia")
+
+#Histograma en GGplot para el Valor Diario (%) de Potasio 
+Hist_Pot2<-ggplot(data=UScereal2, aes(potassium_daily)) + geom_histogram() +
+  labs(title = "Distribución por Valor Diario Recomendado (%) del Potasio", x = "Valor Diario Recomendado (%)", y = "Frecuencia")
+
+#Boxplots en ggplot, incorporando el fabricante
+Box_Pot1<-ggplot(UScereal2, aes(x = reorder(mfr, potassium), 
+                              y = potassium)) +
+  geom_jitter(alpha = 0.6, size = 0.5) +
+  geom_boxplot(outlier.color = NA) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Distribución del Potasio (mg por porción) por fabricante", x = "Fabricante", y = "Miligramos por porción") + theme(plot.title = element_text(size=8, face="bold"))
+
+Box_Pot2<-ggplot(UScereal2, aes(x = reorder(mfr, potassium_daily), 
+                              y = potassium_daily)) +
+  geom_jitter(alpha = 0.6, size = 0.5) +
+  geom_boxplot(outlier.color = NA) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "% del Valor Diario Recomendado del Potasio por fabricante", x = "Fabricante", y = "% del Valor Diario Recomendado") + theme(plot.title = element_text(size=8, face="bold"))
+
+
+#Histograma en GGplot para Fibra
+Hist_Fib1<-ggplot(data=UScereal2, aes(fibre)) + geom_histogram() +
+  labs(title = "Distribución por Fibra (g por porción) para cada uno de los 65 cereales", x = "Gramos de Fibra por porción", y = "Frecuencia")
+
+#Histograma en GGplot para el Valor Diario (%) de Fibra 
+Hist_Fib2<-ggplot(data=UScereal2, aes(fibre_daily)) + geom_histogram() +
+  labs(title = "Distribución por Valor Diario Recomendado (%) de Fibra", x = "Valor Diario Recomendado (%)", y = "Frecuencia")
+
+#Boxplots en ggplot, incorporando el fabricante
+Box_Fib1<-ggplot(UScereal2, aes(x = reorder(mfr, fibre), 
+                              y = fibre)) +
+  geom_jitter(alpha = 0.6, size = 0.5) +
+  geom_boxplot(outlier.color = NA) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Distribución de Fibra (g por porción) por fabricante", x = "Fabricante", y = "Gramos por porción") + theme(plot.title = element_text(size=8, face="bold"))
+
+Box_Fib2<-ggplot(UScereal2, aes(x = reorder(mfr, fibre_daily), 
+                              y = fibre_daily)) +
+  geom_jitter(alpha = 0.6, size = 0.5) +
+  geom_boxplot(outlier.color = NA) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "% del Valor Diario Recomendado de Fibra por fabricante", x = "Fabricante", y = "% del Valor Diario Recomendado") + theme(plot.title = element_text(size=8, face="bold"))
+
+grid.arrange(Hist_Pot1, Hist_Pot2, nrow = 2)
+grid.arrange(Box_Pot1, Box_Pot2, nrow = 1)
+
+grid.arrange(Hist_Fib1, Hist_Fib2, nrow = 2)
+grid.arrange(Box_Fib1, Box_Fib2, nrow = 1)
+
+```  
+
+Analizando las gráficas llegamos a la conclusión de que existe dispersión suficiente en estos datos para que la elección de cereal pueda tener algún efecto nutricional, donde si nos basamos en el Valor Diario Recomendado (%) de cada nutriente (última gráfica), podremos encontrar cereales y fabricantes con mayores porcentajes con respecto al valor de referencia provisto por la FDA, en especial los de Post y Nabisco.
+
+
+2. Divide los cereales en tres grupos, según los cuantiles 1/3 y 2/3 del contenido de proteína. Grafica pequeños múltiplos para describir la relación entre potasio y fibra para cada uno de los tres grupos. ¿Se trata de la misma relación en cada grupo? ¿En qué son diferentes? ¿Cómo describirías los cereales del grupo con menos contenido de proteína (ve qué cereales son)?
+
+Procedemos a generar los cuantiles (terciles):
+
+```{r 2.13, include=TRUE}
+
+#generamos cuantiles (terciles) de proteína utilizando la función quantile
+terciles = quantile(UScereal2$protein, c(0:3/3))
+#observamos los cuantiles (terciles)
+quantile(UScereal2$protein, c(0:3/3))
+
+#Etiquetamos los terciles utilizando la función cut
+UScereal2$tercil = with(UScereal2, cut(protein, terciles, include.lowest = T, labels = c("1/3", "2/3", "3/3")))
+
+# Ordenamos y agregamos f. Adicionalmente creamos un valor de relación entre fibra  y potasio
+UScereal2 <- UScereal2 %>%
+  mutate(orden_proteina = rank(protein, ties.method = "first"),
+         f = (orden_proteina - 0.5) / n(), 
+         rel_pot_fib = fibre / potassium)
+```  
+
+Creamos una tabla proteína para ordenar y observar la correcta clasificación de los terciles creados con cut.
+
+```{r 2.131, include=TRUE}
+proteina <- UScereal2 %>% dplyr::select(orden_proteina, f, tercil, protein) %>% arrange(f)
+bind_rows(head(proteina), tail(proteina))
+```  
+
+Calculamos la correlación por cuantil y calculamos la proporción entre mg de potasio por gramos de fibra, al final graficamos en pequeños múltipos:
+
+```{r 2.14, include=TRUE}
+#separamos terciles para calcular correlaciones
+tercil1 = filter(UScereal2, tercil == "1/3")
+tercil2 = filter(UScereal2, tercil == "2/3")
+tercil3 = filter(UScereal2, tercil == "3/3")
+
+#correlaciones por tercil
+corr_pot_fib = cor(UScereal2$potassium, UScereal2$fibre)
+corr_pot_fib1 = cor(tercil1$potassium, tercil1$fibre)
+corr_pot_fib2 = cor(tercil2$potassium, tercil2$fibre)
+corr_pot_fib3 = cor(tercil3$potassium, tercil3$fibre)
+
+#relación fibra/potasio
+mean_pot_fib = mean(UScereal2$rel_pot_fib)
+mean_pot_fib1 = mean(tercil1$rel_pot_fib)
+mean_pot_fib2 = mean(tercil2$rel_pot_fib)
+mean_pot_fib3 = mean(tercil3$rel_pot_fib)
+
+#imprimimos enunciados con los valores calculados
+print(paste("La correlación entre el potasio y la fibra para toda la muestra de cereales es de", round(corr_pot_fib,2)), quote = FALSE)
+print(paste("Para el tercil 1/3 la correlación es de", round(corr_pot_fib1,2), ". Por cada g de fibra hay en promedio", round(mean_pot_fib1,3), " mg de potasio"), quote = FALSE)
+print(paste("Para el tercil 2/3 la correlación es de", round(corr_pot_fib2,2), ". Por cada g de fibra hay en promedio", round(mean_pot_fib2,3), "mg de potasio"), quote = FALSE)
+print(paste("Para el tercil la correlación 3/3", round(corr_pot_fib3,2), ". Por cada g de fibra hay en promedio", round(mean_pot_fib3,3), "mg de potasio"), quote = FALSE)
+
+#graficamos en pequeños múltiplos
+ggplot(UScereal2, aes(x=potassium, y=fibre)) + geom_point() +
+    facet_wrap(~tercil) +
+    geom_smooth(method = "loess", span = 0.8, se = FALSE,
+                method.args = list(degree = 1, family="symmetric"))
+```  
+
+Tomando en cuenta que a pesar de que la correlación entre la fibra y el potasio para toda la muestra es alta (0.96), podemos observar como la misma es creciente para cada uno de los cuantiles en función del contenido de proteina, es decir, a mayor proteína mayor relación entre el contenido de potasio y fibra.
+
+Ahora observaremos a las marcas y cereales con menor proteína:
+
+```{r 2.15, include=TRUE}
+#Agrupamos la data por tercil
+by_tercil <- UScereal2 %>% group_by(tercil)
+#Aplicamos un conteo por marca
+by_tercil <- by_tercil %>% dplyr::count(mfr, tercil, sort = TRUE)
+
+ggplot(by_tercil, aes(x=mfr, y=n, fill = mfr)) + 
+  geom_bar(position = 'dodge', stat='identity') +
+  scale_fill_manual(values = c("darkred","darkred","gray","gray", "gray", "gray")) +
+  facet_wrap(~tercil) +
+  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=0) +
+  ylab("# de Cereales") +
+  xlab("Fabricante de Cereal") +
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5), legend.position = "none") 
+```  
+
+Es claro que los cuantiles 1/3 y 2/3 están compuestos en su mayoría por cereales de General Mills y Kellogs. Observando la tabla original (y considerando que no es posible incluir la marca del cereal como columna de forma que lo mostremos en este análisis exploratorio) encontramos cereales tradicionalmente muy dulces como lo son Cocoa Puffs, Count Chocula, Trix, Cinnamon Toast Crunch y Golden Grahams de de General Mills; o bien, Corn Pops, Frosted Flakes, Apple Jacks y Froot Loops de Kellogs.
+
+### 3. Prueba de Hipótesis: Ascorbato
+
+Pacientes con cancer terminal avanzado en el estómago y mama se trataron con ascorbato para prolongar la supervivencia. Los datos `ascorbate` muestran 
+la supervivencia en días. Trabaja con los datos en escala logarítimica.
+
+La información de `ascorbate.csv` nos indica la supervivencia en días que pacientes con 2 tipos de cáncer obtuvieron al medicarse con ascorbato. Realizaremos una prueba de hipótesis visual para determinar si existe diferencia entre la supervivencia de un tipo de cancer con respecto al otro.
+```{r Ascorbato, include=TRUE}
+# base de datos
+data_ascor = read.csv("ascorbate.csv") #%>% 
+#filter(!is.na(stomach), !is.na(breast))
+str(data_ascor)
+head(data_ascor)
+```
+
+1. Realiza una prueba de hipótesis visual para comparar las mediciones de 
+los dos grupos. Describe tus conclusiones.
+
+Transformación a escala logarítmica:
+```{r trans_hipotesis, include=TRUE}
+# acomodamos la información de data_ascor y transformamos con log()
+data_mod_ascor <- melt(as.data.table(data_ascor)) %>% 
+  mutate(log_valor = log(value)) %>% 
+  rename(tipo = variable, valor = value) %>% 
+  dplyr::select(-valor)
+
+# usamos lineup para una prueba visual
+data_perm_ascor <- lineup(null_permute("tipo"), data_mod_ascor, n= 20, pos = 1)
+
+ggplot(data_perm_ascor, aes(x= tipo)) +
+  ggtitle("Prueba lineup") +
+  geom_boxplot(aes(y= log_valor)) +
+  facet_wrap(~ .sample) +
+  theme_minimal()
+
+```
+
+Podemos observar que no es tan complicado encontrar los datos reales, los cuales indican una media mayor para cáncer de pecho y están en el primer plot. No obstante, existen algunos plots que pudieran confundir así que realizaremos una prueba de hipótesis para la diferencia de medias.
+
+Es decir, queremos saber si H0: "No existe diferencia entre la media del tiempo de vida al usar ascorbato en ambos tipos de cancer". Así, la H1 es: "Existe diferencia entre la media del tiempo de vida al usar ascorbato en los tipos de cancer".
+
+#### 2. Usa una prueba de permutación para examinar la hipótesis de que no hay 
+diferencia en la media de los tiempos de supervivencia. Escribe la hipóteisis nula, hipótesis alterna, y reporta el valor $p$ de la prueba.
+
+Las medias muestrales son
+```{r medias_muestrales, include=TRUE}
+data_mod_ascor %>% 
+  group_by(tipo) %>% 
+  summarise(media = mean(log_valor, na.rm=T))
+
+```
+
+Y la diferencia de medias observada es
+```{r medias_muestrales2, include=TRUE}
+# diferencia observada
+dif_obs_ascor = data_mod_ascor %>%
+  group_by(tipo) %>%
+  summarise(media = mean(log_valor, na.rm = T)) %>%
+  pivot_wider(names_from = tipo, values_from = media) %>% #para la diferencia de columnas
+  mutate(dif_medias = stomach - breast) %>%
+  pull(dif_medias)
+dif_obs_ascor
+```
+Ahora realizamos las permutaciones con lineup
+```{r permut_hipotesis, include=TRUE}
+# Generamos 25,000 muestras permutadas y calculamos la diferencia de medias
+data_perm_ascor = lineup(null_permute("tipo"), data_mod_ascor, n= 25000)
+dif_med_ascor = data_perm_ascor %>%
+  group_by(tipo, .sample) %>%
+  summarise(media = mean(log_valor, na.rm=T)) %>%
+  pivot_wider(names_from = tipo, values_from = media) %>%
+  mutate(dif_medias = stomach - breast)
+#dif_med_ascor
+```
+Y graficamos la distribución de referencia junto con el valor observado
+```{r graf_hipotesis,include=TRUE}
+# función distribución acumulada
+dist_perm_ascor <- ecdf(dif_med_ascor$dif_medias)
+
+# ¿dónde cae el valor observado?
+percentil_obs_ascor <- dist_perm_ascor(dif_obs_ascor)
+
+# graficamos
+g1 = ggplot(data = dif_med_ascor, aes(sample= dif_medias))+
+  geom_qq(col = "steelblue4", alpha = .5)  +
+  xlab("f") + ylab("") + 
+  labs(subtitle = "Distribución nula o de referencia") +
+  geom_hline(yintercept = dif_obs_ascor, colour = "red", lty=2) +
+  annotate("text", x = 0.3, y = dif_obs_ascor - 0.05, label = "dif observada", colour = "red") +
+  theme_minimal()
+
+g2 = ggplot(data = dif_med_ascor, aes(x = dif_medias)) + 
+  geom_histogram(binwidth = 0.08, fill = "steelblue4", alpha = .5) + 
+  coord_flip() + xlab("") + labs(subtitle = "") +
+  geom_vline(xintercept = dif_obs_ascor, colour = "red", lty=2) +
+  annotate("text", y="", x = dif_obs_ascor, label = percentil_obs_ascor, vjust = 1, hjust = -0.3, colour = "red") +
+  theme_minimal()
+
+grid.arrange(g1, g2, nrow=1)
+```
+
+Calculamos el valor para dos colas pues en nuestra prueba de medias proponemos H0 como mismo efecto para ambos tipos de cáncer. El efecto no puede ser mayor (menor) para uno y menor (mayor) para el otro.
+```{r dos_colas, include=TRUE}
+# calculamos valor p a dos colas
+2 * min(dist_perm_ascor(dif_obs_ascor), (1 - dist_perm_ascor(dif_obs_ascor)))
+```
+
+Lo anterior nos dice que tenemos poca probabilidad (~1%) de que el valor que observamos, concuerde con la H0. Interpretamos el valor como evidencia suficiente para refutar la hipótesis nula.
+
+Parece que el uso de ascorbato no otorga el mismo promedio de vida para pacientes con cancer de estómago y pecho. Cabe mencionar que decidimos dejar los datos faltantes, pues la muestra ya era muy chica como para eliminarlos. Una decisión diferente puede afectar el resultado de la prueba.
+
+
+### 4. Prueba visual: Places
+
+1. La base de datos `places` (Boyer y Savageau 1984) contiene _ratings_ de 
+varios aspectos de ciudades de EUA. El objetivo de este ejercicio es investigar 
+si las variables en estos datos están asociadas, en particular se considera 
+clima (Climate) y costo de vivienda (HousingCost). Valores bajos en clima 
+implican temperaturas inconvenientes, puede ser mucho calor o  mucho frío,
+mientras que valores altos corresponden a temperaturas 
+más moderadas. Por su parte, valores altos en vivienda indican costos altos 
+para una casa familiar simple. 
+
+```{r import3, include=TRUE}
+places <- read_csv("places.csv")
+head(places)
+```  
+
+* ¿Qué relación esperarías entre las variables? Escribe la hipótesis nula.
+
+En el problema cada renglón es una observación que corresponde a una ciudad y se desea probar si hay una relación entre Clima y Costo de vivienda. Se espera que el contar con mejor clima tenga un efecto positivo en el precio de la vivienda. Es decir, a mejor clima mayor el precio.
+
+Para medir el efecto una prueba de hipótesis de correlación es adecuada, 
+donde $H_0: \rho = 0$ y $H_1: \rho != 0$:
+
+```{r 4.1, include=TRUE}
+places_raw <- read.csv("places.csv", row.names = 1, sep = "") %>% dplyr::select(Climate, HousingCost)
+
+dif_obs <- 
+  places_raw %>% 
+  summarise(rho = cor(Climate, HousingCost)) %>%
+  pull(rho) %>% round(3)
+``` 
+
+* Describe un método gráfico para probar tu hipótesis e implementalo. Genera 
+9 conjuntos de datos nulos y graficalos junto con los datos reales, escribe el 
+nivel de significancia de la prueba y tus conclusiones.
+
+Un método gráfico para probar la hipótesis es un scatterplot con una recta que ajuste a los puntos. De esta manera la pendiente de la recta va a representar la correlación entre los datos.
+
+Relación coeficiente de correlación con coeficiente de lm:
+
+```{r 4.2, include=TRUE}
+lin_reg <- coef(lm(scale(places_raw$HousingCost,center = T, scale = T)~scale(places_raw$Climate,center = T, scale = T)))[[2]]
+cor_c <- cor(places_raw$HousingCost, places_raw$Climate)
+round(lin_reg,4) == round(cor_c,4)
+``` 
+De esta manera, la prueba visual podemos verla a traves de un geom_smooth(method="lm") y el conjunto de datos. Adicionalmente, generamos las siguientes gráficas
+
+```{r 4.3,message=F, include=TRUE}
+set.seed(121)
+
+perm <- map(1:9, function(x){
+  places_perm <- places_raw %>% 
+    mutate(state = row.names(.)) %>% 
+    pivot_longer(cols = c("Climate", "HousingCost")) %>% 
+    group_by(name) %>% 
+    mutate(state = sample(state)) %>% 
+    ungroup()
+  
+  places_perm %>% 
+    spread(name, value) %>% 
+    ggplot(aes(x = Climate, y = HousingCost)) + 
+    scale_y_continuous(labels = scales::comma_format(prefix = "$"))+
+    theme_minimal() +
+    geom_point(alpha = 0.1, size = 0.5) + geom_smooth(method = "lm", se = F, color = "dodgerblue4") + labs(x = "", y = "")
+})
+
+perm[[10]] <-  places_raw %>% 
+  mutate(state = row.names(.)) %>% 
+  pivot_longer(cols = c("Climate", "HousingCost")) %>% 
+  spread(name, value) %>% 
+  ggplot(aes(x = Climate, y = HousingCost)) + 
+  theme_minimal() +
+  geom_point(alpha = 0.1, size = 0.5) + geom_smooth(method = "lm", se = F, color = "darkorange4") + labs(x = "", y = "")
+
+do.call(grid.arrange, perm)
+
+```
+
+Distribución nula (bajo H0):
+  Al calcular la distribución nula, suponemos que no hay relacion entre las variables por lo que permutamos. Intuitivamente, al no tener relación la distribución debe estar centrada en 0:
+  
+```{r 4.4, include=TRUE}
+calcula_rho <- function(){
+  places_perm <- places_raw %>% 
+    mutate(state = row.names(.)) %>% 
+    pivot_longer(cols = c("Climate", "HousingCost")) %>% 
+    group_by(name) %>% 
+    mutate(state = sample(state)) %>% 
+    ungroup()
+  
+  places_perm %>%
+    pivot_wider(names_from = "name", values_from = "value") %>% 
+    dplyr::summarize(rho = cor(HousingCost, Climate)) %>% 
+    pull(rho)
+}
+
+difs <- rerun(2000, calcula_rho()) %>% flatten_dbl()
+
+perms <- tibble(sims = 1:2000, difs = difs)
+```
+
+
+```{r 4.5, include=TRUE}
+dist_perm <- ecdf(perms$difs)
+percentil_obs <- dist_perm(dif_obs)
+
+g1 <- ggplot(perms, aes(sample = difs)) + 
+  geom_qq(distribution = stats::qunif, color = "steelblue4", alpha = .1)  +
+  xlab("f") + ylab("diferencia") + labs(subtitle = "Distribución nula o de referencia")+
+  geom_hline(yintercept = dif_obs, colour = "darkorange4") +
+  annotate("text", x = 0.3, y = dif_obs - 0.05, label = "diferencia observada", colour = "red")+
+  theme_minimal()
+g2 <- ggplot(perms, aes(x = difs)) + 
+  geom_histogram(binwidth = 0.01, fill = "steelblue4", alpha = .5) + 
+  geom_vline(xintercept = dif_obs, color = "darkorange4")+coord_flip()+
+  annotate("text", x = dif_obs, y = 175, label = percentil_obs, vjust = -0.2, colour = "red")+
+  theme_minimal()
+
+grid.arrange(g1, g2, nrow = 1)
+```
+
+Para comparar, con un método tradicional, tenemos que el estadístico asociado al coeficiente de correlacion se distribuye t-student con n-2 grados de libertad. Entonces:
+  
+```{r 4.6, include=TRUE}
+gl = nrow(places_raw)-2
+coef_cor = cor(places_raw$Climate, places_raw$HousingCost)
+
+data.frame(n = 1:100000, s = rt(n = 100000, df = gl)) %>%
+  ggplot(aes(x = s)) +  
+  geom_histogram(alpha = .5, fill = "steelblue4") + 
+  theme_minimal() + 
+  geom_vline(xintercept = coef_cor*sqrt(329-2)/sqrt(1-coef_cor^2), color = "darkorange4",
+             size = 1) +
+  labs(title = "Histograma considerando distribución t-student n-2 gl",
+       subtitle = "Considerando 100,000 muestras de la distribución con n-2 gl") +
+  scale_y_continuous(labels = scales::comma_format())
+```
+
+Al observar las distribuciones nulas (tanto por el método tradicional t-student, como por la prueba visual) los valores de las distribuciones están centradas en 0 y con la mayor parte de la distribución está entre -2 y 2. En cambio, el valor del estadístico está por encima de .3 lo que hace poco probable que provenga de la distribución nula.
+
+
+### 5. Bootstrap: Tráfico
+
+**Tráfico**
+
+La base de datos _amis_ (publicada por G. Amis) contiene información de 
+velocidades de coches en millas por hora, las mediciones se realizaron en 
+caminos de Cambridgeshire, y para cada ubicación se realizan mediciones en 
+dos sitios, en uno de estos sitios se situó una señal de alerta (de dismunición de 
+velocidad). Mas aún, las mediciones se realizaron en dos ocasiones, antes y 
+después de que se instalara la señal de alerta.
+La cantidad de interés es el cambio medio relativo de velocidad en el cuantil 
+0.85. Se eligió esta cantidad porque el objetivo de la señal de alerta es 
+disminuir la velocidad de los conductores más veloces.
+
+Variables: speed: velocidad de los autos en mph, period: periodo en que
+se hicieron las mediciones 1 indica antes de la señal, 2 cuando ya había
+señal, pair: carretera en que se hizo la medición (1,2,5,7,8,9,10,11,12,13,14),
+warning: si se colocó señal de alerta en el sitio 1 indica que si había señal, 
+2 que no había.
+
+
+La información de `amis` nos indica velocidades de coches en millas por hora en la ciudad de Cambridgeshire. Para cada medición tenemos información de otras variables.
+```{r import4, include=TRUE}
+# base de datos
+data_amis = read.csv("amis.csv")
+str(data_amis)
+```
+
+a) ¿Las observaciones conforman una muestra aleatoria? Explica tu respuesta y en 
+caso de ser negativa explica la estructura de los datos.
+
+Con base en el tipo de estudio, podemos pensar que la asignación a grupos de las unidades (los carros) ha sido aleatorio, pues a ningun sujeto se le dice que deba transitar una cierta carretera. Sin embargo, es verdad que tomando en cuenta la rutina de la gente, la probabilidad de tomar alguna de las carreteras del estudio no es la misma. Adicionalmente, no tenemos información de la selección de carreteras y los puntos para el señalamiento. Procedemos a inspeccionar los datos.
+
+```{r 5, include=TRUE}
+# checamos valores faltantes
+print("Buscando valores NA")
+table(is.na(data_amis))
+
+# convertimos a factor las variables categóricas
+data_amis$period <- factor(data_amis$period)
+data_amis$warning <- factor(data_amis$warning)
+data_amis$pair <- factor(data_amis$pair)
+
+# observamos los datos por categoría
+print("Valores por categoría")
+table(data_amis$period)
+table(data_amis$warning)
+table(data_amis$pair)
+```
+Al checar los datos por categoría (y en atención a la descripción del estudio), pensamos que no vienen de una muestra aleatoria, pues cada categoría tiene en sus niveles la misma cantidad de información. 
+
+Lo anterior es importante porque también nos indica que tenemos datos balanceados para cada agrupación como: "La medición de la velocidad en las 11 carreteras antes de poner alertas de velocidad y después. Del mismo modo, tenemos la velocidad antes y despues de no poner la alerta".
+
+Esto facilita el remuestreo, pues no nos preocupamos de diferenciar tamaños de muestra para el evento de poner las alertas de velocidad vs no poner las alertas.
+
+Posiblemente se trate de una muestra menor de un conjunto de datos más grande. Esto no es bueno para Bootstrap, pues no tenemos certeza de cómo se generaron los datos. ¿Esta muestra realmente aproxima la poblacional?
+
+
+```{r 5.1, include=TRUE}
+# Graficamos la función de cuantiles para ver la dispersión de la variable de interés: velocidad
+ggplot(data_amis, aes(sample = speed))+
+  geom_qq(distribution = stats::qunif ) +
+  geom_vline(xintercept = 0.85, col = "red", lty = 2) +
+  xlab("f") +
+  ylab("velocidad") +
+  theme_minimal()
+
+```
+
+Graficamos la función de cuantiles y observamos que la variable de interés `velocidad` se compone de valores repetidos, es decir, trabajaremos con la velocidad promedio al momento de tomar la medición. El grupo de datos que nos pide el problema es aquel en el cuantil 0.85, cuyo corte es de 44 millas por hora.
+
+```{r 5.2, include=TRUE}
+# Calculamos los valores de velocidad que determinan el corte para cada cuantil. En este caso, el cuantil 0.85 de interés tiene el corte en 44 mph asi que esos valores son los que tomaremos
+q_85_amis <- t(quantile(data_amis$speed, 0.85))[1]
+q_grupos <- cut2(data_amis$speed, cuts = q_85_amis)
+
+# renombramos niveles por convenienza
+levels(q_grupos) <- c("no_interes", "interes")
+levels(data_amis$period) <- c("a", "b")
+data_amis$q <- q_grupos
+
+str(data_amis)
+```
+
+b) El estadístico de interés se puede escribir como 
+
+$$\eta=\frac{1}{m}\sum[(\eta_{a1}-\eta_{b1})-(\eta_{a0}-\eta_{b0})]$$ 
+
+donde $\eta_{a1}$, $\eta_{b1}$ corresponden a los cuartiles 0.85 de la 
+distribución de velocidad en los sitios en los que se colocó la señal de 
+alerta, ($a$ corresponde a las mediciones antes de la señal y $b$ después) y 
+$\eta_{a0}$, $\eta_{b0}$ son los correspondientes para los sitios sin
+alerta, $m$ denota el número de carreteras. Calcula el estimador _plug-in_ de $\eta$.
+
+Convertimos en función el cálculo del estimador indicado en el problema y aplicamos la metodología Bootstrap para estimar el error de la estimación.
+
+```{r 5.3, include=TRUE}
+estimador_amis = function(x){
+  
+  # utilizamos solo la información del cuantil 0.85 
+  data_ <- filter(x, x$q == "interes")
+  #data_ <- filter(x, x$speed == q_85_amis)
+  # variables para calcular el estimador
+  m <- length(unique(data_$pair))
+  #print(mean(data_$speed))
+  
+  # Creamos una matriz con la velocidad promedio para los casos (column-wise):
+  # periodo antes con alerta
+  # periodo después con alerta
+  # periodo antes sin alerta
+  # periodo después sin alerta
+  mat_grupos <- tapply(data_$speed, list(data_$warning, data_$period), mean)
+  #print(mat_grupos)
+  #    a  |   b
+  #1   x      x
+  #2   x      x
+  
+  # calculamos las diferencias de la siguiente manera: 
+  # velocidad promedio antes y con alerta - velocidad promedio después con alerta
+  dif_con_alerta <- mat_grupos[1,1] - mat_grupos[1,2]
+  # velocidad promedio antes y sin alerta - velocidad promedio después sin alerta
+  dif_sin_alerta <- mat_grupos[2,1] - mat_grupos[2,2]
+  
+  etha_hat <- 1/m * (dif_con_alerta - dif_sin_alerta)
+}
+```
+
+Por ejemplo, el estimador plug-in etha de la muestra es:
+```{r 5.4, include=TRUE}
+etha_amis <- estimador_amis(data_amis)
+etha_amis
+```
+
+c) Genera $B=3000$ replicaciones bootstrap de $\eta$ y realiza un histograma. 
+
+```{r 5.5, include=TRUE}
+# Creamos las remuestras con bootstrap y la tabla original
+muestra_boot_amis <- function(x){
+  sample_n(x, size = nrow(x), replace = TRUE)
+}
+# tabla de estimaciones boots
+etha_tbl_amis = map_dbl(1:3000,  ~ estimador_amis(muestra_boot_amis(data_amis))) %>% 
+  tibble(etha_hat = .)
+```
+
+El estimador bootstrap y su error estandar se presentan a continuación:
+```{r 5.6, include=TRUE}
+mu_amis_boot = mean(etha_tbl_amis$etha_hat)
+ee_amis_boot = sd(etha_tbl_amis$etha_hat)
+c(media_boot = mu_amis_boot, ee_bot = ee_amis_boot) %>% round(3)
+```
+
+Si graficamos la distribución bootstrap y comparamos con los cuantiles de una normal, observamos que nuestra aproximación como distribución normal es válida. Tambien podemos apreciar que nuestra estimación (en azul), no está muy lejos de la media de la muestra (rojo). 
+```{r 5.7, include=TRUE}
+# histograma para la distribución de remuestreo
+g1_amis <- ggplot(etha_tbl_amis ) + 
+  geom_histogram(aes(x = etha_hat), bins = 20, fill = "steelblue4", alpha = .5) +
+  geom_vline(xintercept = etha_amis, colour = "red", lty=1) +
+  geom_vline(xintercept = mu_amis_boot, colour = "blue", lty=2) +
+  ggtitle("Distribución Bootstrap para etha") +
+  xlab("Estimador boot") +
+  ylab("")
+
+# gráfica de cuantiles normales
+g2_amis <- ggplot(etha_tbl_amis, aes(sample = etha_hat)) +
+  geom_qq(color = "steelblue4", alpha = .5) + geom_qq_line(colour = "red") +
+  ggtitle("Gráfica de cuantiles teóricos") +
+  ylab("")
+
+grid.arrange(g1_amis, g2_amis)
+```
+
+Checamos la estimación del sesgo, el cual es muy bajo (aunque sería preferible que fuera < 2% del error estándar)
+```{r 5.8, include=TRUE}
+sesgo_amis = mu_amis_boot - etha_amis
+# estandarizamos con SD boot
+pct_sd_amis = sesgo_amis / ee_amis_boot
+
+c(sesgo = sesgo_amis, pct_ee = pct_sd_amis) %>% round(3)
+```
+
+d) Genera intervalos de confianza usando la aproximación normal y percentiles. Comparalos y en caso de encontrar diferencias explica a que se deben. 
+
+Generamos intervalos de confianza con la información de Bootstrap por el método normal y el método de percentiles. Observamos que los intervalos son similares:
+```{r 5.9, include=TRUE}
+#normal
+med_amis <- etha_amis
+sd_amis <- ee_amis_boot
+ic_95_amis <- c(med_amis - 2*sd_amis, med_amis + 2*sd_amis)
+print("Intervalo por normal")
+(ic_95_amis) %>%  round(3)
+
+#bootstrap
+ic_boot_95_amis <- quantile(etha_tbl_amis$etha_hat, probs = c(0.025, 0.975))
+print("Intervalo por percentil")
+(ic_boot_95_amis) %>% round(3)
+
+```
+En suma, obtenemos una buena estimación de etha para el cuantil 0.85 de la distribución de la variable velocidad de los datos `amis`.
+
+### 6. Cobertura de intervalos
+
+En este problema realizarás un ejercicio de simulación para comparar la 
+exactitud de distintos intervalos de confianza. Simularás muestras de  
+una distribución Poisson con parámetro $\lambda=2.5$ y el estadístico de interés  
+es $\theta=exp(-2\lambda)$.
+
+Sigue el siguiente proceso:
+
+i) Genera una muestra aleatoria de tamaño $n=60$ con distribución 
+$Poisson(\lambda)$, parámetro $\lambda=2.5$ (en R usa la función `rpois()`).
+
+```{r 6.1, include=TRUE}
+
+sim = rpois(n=60, lambda = 2.5)
+sim_df = data.frame(sim = sim)
+``` 
+
+ii) Genera $5,000$ muestras bootstrap y calcula intervalos de confianza del 
+95\% para $\hat{\theta}$ usando 1) el método normal y 2) percentiles.
+
+```{r 6.2, include=TRUE}
+media_muestras <- map_dbl(1:5000, ~ sim_df %>%  
+                            sample_n(60, replace = T) %>%
+                            summarise(media_precio = exp(-2*mean(sim)), .groups = "drop") %>% 
+                            pull(media_precio)) 
+
+intervalos <- data.frame(
+  tipo = c("normal", "percentil"),  
+  min_int = c(mean(media_muestras)-2*sd(media_muestras),as.numeric(quantile(media_muestras, c(.025)))),
+  media = c(mean(media_muestras), as.numeric(quantile(media_muestras, c(.5)))),
+  max_int = c(mean(media_muestras)+2*sd(media_muestras),as.numeric(quantile(media_muestras, c(.975))))) 
+
+formattable::formattable(intervalos %>% 
+                           rename(Tipo = tipo,
+                                  "Intevalo mínimo" = min_int,
+                                  "Intevalo máximo" = max_int,
+                                  "Media" = media))
+``` 
+
+iii) Revisa si el intervalo de confianza contiene el verdadero valor del 
+parámetro ($\theta=exp(-2\cdot2.5)$), en caso de que no lo contenga registra si 
+falló por la izquierda (el límite inferior mayor $exp(-2.5*\lambda)$) o falló por la 
+derecha (el límite superior menor $exp(-2.5*\lambda)$).
+
+```{r 6.3, include=TRUE}
+intervalos %>% 
+  ggplot(aes(x = tipo, y = media)) +
+  geom_point(color = "darkorange2", size = 3) +
+  theme_minimal()+
+  labs(title = "Intervalos de confianza para Theta", 
+       subtitle = "La linea roja representa el valor de exp(-2*2.5)", 
+       caption = "Ambos intervalos contienen al valor de exp(-2*2.5)", 
+       x = "Tipo de Intervalo de Confianza", y = "Theta")+
+  geom_linerange(aes(ymin = min_int, ymax = max_int), color = "darkorange2", linetype =2, size = 1)+
+  geom_hline(yintercept = exp(-2*2.5), color = "red", alpha = .3)
+``` 
+
+a) Repite el proceso descrito 1000 veces y llena la siguiente tabla:
+
+```{r 6.4, include=TRUE}
+function_print <- function(tam_muestra, boot_n, proc_n){
+  
+  cob <- purrr::map_dfr(1:proc_n, function(x){
+    if(x%%100==0) print(x)
+    sim = rpois(n=tam_muestra, lambda = 2.5)
+    sim_df = data.frame(sim = sim)
+    
+    media_muestras <- map_dbl(1:boot_n, ~ sim_df %>%  
+                                sample_n(tam_muestra, replace = T) %>%
+                                dplyr::summarise(media_precio = exp(-2*mean(sim)), .groups = "drop") %>% 
+                                pull(media_precio)) 
+    
+    intervalos <- data.frame(
+      tipo = c("normal", "percentil"),  
+      min_int = c(mean(media_muestras)-2*sd(media_muestras),as.numeric(quantile(media_muestras, c(.025)))),
+      media = c(mean(media_muestras), as.numeric(quantile(media_muestras, c(.5)))),
+      max_int = c(mean(media_muestras)+2*sd(media_muestras),as.numeric(quantile(media_muestras, c(.975))))) %>% 
+      mutate(real = exp(-2*2.5), iteracion = x)
+  })
+  
+  xx <- cob %>% 
+    mutate(class = if_else(real<min_int, "fallo_izquierda", if_else(real>max_int, "fallo derecha", "cobertura"))) %>%
+    group_by(tipo, class) %>% dplyr::summarize(n = n()) %>% ungroup() %>% group_by(tipo) %>% 
+    mutate(prop = n/sum(n)) %>% dplyr::select(-n) %>% ungroup()
+  
+  out_tbl <-   xx %>% spread(class, prop, fill = 0) %>% left_join(
+    cob %>% group_by(tipo) %>% dplyr::summarize(lprom = mean(max_int-min_int)))
+  
+  out_gg <- cob %>% 
+    mutate(class = if_else(real<min_int, "fallo_izquierda", if_else(real>max_int, "fallo derecha", "cobertura"))) %>% 
+    ggplot(aes(x = iteracion, y = media, color = class))+
+    geom_point(alpha = .01) +
+    geom_linerange(aes(ymin = min_int, ymax = max_int), alpha = .3)+
+    geom_hline(yintercept = exp(-2*2.5))+
+    facet_wrap(~tipo, ncol = 1)+
+    theme_minimal()+
+    theme(legend.position = "bottom")
+  
+  return(list(sim = cob, plot = out_gg, table = out_tbl))
+}
+```
+
+```{r 6.5, cache=TRUE, include=TRUE}
+#Comentamos para no volver a correr durante el markdown.
+#data60 <- function_print(60, 500, 500)
+#saveRDS(data60, "data60.RDS")
+data60 <- readRDS("data60.RDS")
+```
+
+Método     | \% fallo izquierda   | \% fallo derecha  | Cobertura | Longitud promedio
+-----------|----------------------|-------------------|-----------|------------ 
+Normal     |                      |                   |           |
+Percentiles|                      |                   |           |
+
+```{r 6.6, include=TRUE}
+formattable::formattable(data60$table %>% 
+                           rename(Tipo = tipo,
+                                  Cobertura = cobertura,
+                                  "% fallo derecha" = `fallo derecha`,
+                                  "% fallo izquierda" = `fallo_izquierda`,
+                                  "Longitud promedio" = lprom))
+```
+
+La columna cobertura es una estimación de la cobertura del intervalo basada en 
+las simulaciones, para calcularla simplemente escribe el porcentaje de los 
+intervalos que incluyeron el verdadero valor del parámetro. La longitud promedio
+es la longitud promedio de los intervalos de confianza bajo cada método.
+
+b) Realiza una gráfica de páneles, en cada panel mostrarás los resultados de 
+uno de los métodos (normal, percentiles), en el vertical 
+graficarás los límites de los intervalos.
+
+```{r 6.7, include=TRUE}
+data60$plot
+```
+
+c) Repite los incisos a) y b) seleccionando muestras de tamaño $300$.
+
+```{r 6.8, cache=TRUE, include=TRUE}
+#Comentamos para no volver a correr durante el markdown.
+#data300 <- function_print(300, 500, 500)
+#saveRDS(data300, "data300.RDS")
+data300 <- readRDS("data300.RDS")
+formattable::formattable(data300$table %>% 
+                           rename(Tipo = tipo,
+                                  Cobertura = cobertura,
+                                  "% fallo derecha" = `fallo derecha`,
+                                  "% fallo izquierda" = `fallo_izquierda`,
+                                  "Longitud promedio" = lprom))
+data300$plot
+```
+
+Nota: Un ejemplo en donde la cantidad $P(X=0)^2 = e^{-\lambda}$ es de interés 
+es como sigue, las llamadas telefónicas a un conmutador se modelan con 
+un proceso Poisson y $\lambda$ es el número promedio de llamadas por minuto, 
+entonce $e^{- \lambda}$ es la probabilidad de que no se reciban llamadas en 
+$1$ minuto.
+
+**Se observa que en el intervalo en la distribución con tamaño de muestra de 300 es de una longitud promedio menor que la de la muestra de 60. Esto se debe la relación entre el tamaño de muestra y la longitud del intervalo es a la inversa. Por otra parte, la cobertura debe ser la misma (alrededor de 95%)**
+
+## {-}
