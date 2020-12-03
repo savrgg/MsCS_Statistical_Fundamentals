@@ -1,0 +1,40 @@
+---
+title: "Final Fundamentos 2020"
+output: html_document
+---
+
+
+La normal sigue la siguiente distribución:
+$$
+f(x) = \frac{1}{\sqrt{2\pi \sigma^2}} \exp\Bigg(\frac{1}{2\sigma^2}(x -\mu)^2\Bigg)
+$$
+
+De manera que, dada una muestra $x_1, x_2, x_3, ..., x_n$, se puede escribir la Likelihood de la siguiente forma: 
+
+$$
+L(x) = \frac{1}{ ( 2\pi \sigma^2)^{n/2}} \exp(\frac{1}{2\sigma^2}\sum_i(x_i -\mu)^2)
+$$
+
+Por lo tanto, usando $a = \sigma^2$ es intuitivo expresar la log-likelihood como:
+$$
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(\sigma^2) - \frac{1}{2\sigma^2}\sum_i (x_i-\mu)^2 \\
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(a) - \frac{1}{2a}\sum_i (x_i-\mu)^2 
+$$
+
+
+Al derivarparcialmente con respecto a $\sigma^2$ e igualando a 0, obtenemos la siguiente expresión:
+$$
+\frac{\partial l(x)}{\partial a} = -\frac{n}{2a} - \Bigg[ \frac{1}{2}\sum_i (x_i-\mu)^2 \Bigg]\Bigg[ -\frac{1}{a^2}  \Bigg] \\
+-\frac{n}{2a} + \Bigg[ \frac{1}{2a^2}\sum_i (x_i-\mu)^2 \Bigg] \\
+\frac{1}{2a} \Bigg[ \frac{1}{a} \sum_i (x_i-\mu)^2 - n \Bigg] = 0 \\
+a = \frac{\sum_i (x_i-\mu)^2}{n}
+$$
+
+De esta forma, el estimador MLE de $\sigma$ lo podemos expresar como:
+
+$$
+\hat{\sigma}^2 = \frac{\sum_i (x_i-\mu)^2}{n}
+$$
+
+
+
