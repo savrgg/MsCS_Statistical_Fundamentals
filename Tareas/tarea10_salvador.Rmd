@@ -1,0 +1,62 @@
+---
+title: "Tarea 10: Más pruebas de hipótesis"
+author: "Salvador Garcia"
+output: html_document
+---
+
+## Ejercicio 1
+(Chihara) Los niveles de calcio en adultos saludables se distribuyen de acuerdo a una Normal con media 9.5 mg/dl y desviación estándar desconocida. Un médico sospecha que la media de los niveles de calcio para mujeres en su comunidad es distinta. Colecta mediciones de 20 mujeres saludables y encuentra que la media es de 9.2 y la desviación estándar muestral de 1.1. Escribe la hipótesis nula, realiza una prueba de hipótesis e interpreta los resultados.
+```{r}
+library(tidyverse)
+# La prueba de hipótesis se realiza con respecto a la media de los datos, por lo que tenemos que H_1: \mu != 9.5 y H_0: \mu = 9.5
+
+T = (9.2-9.5)/sqrt((1.1^2)/20)
+
+# Tenemos que el valor p de esta prueba de hipótesis es:
+2*pt(T, 19)
+
+# Que es un valor alto. Por ejemplo, para un \alpha = 0.05 no rechazariamos. Por lo que no rechazamos que la media sea distinta de 9.5 
+```
+
+(Chihara) Los datos Alelager contienen unformación de calorías y alcohol (por volumen) para una muestra de cervezas ale y lager (por 12 oz). Investiga la hipótesis que las ales tienen más calorías que las lager.
+## Ejercicio 2
+```{r}
+# Para este ejemplo queremos comprobar si si en promedio las ales X_a tienen más calorias que las lager X_l. Entonces:
+# H_0: \mu_a = \mu_l, H_1: \mu_a > \mu_l
+
+data_raw = read.csv("alelager.txt")
+
+# calculamos \bar(X_a) y \bar(X_l), asi como S_{X_a} y S_{X_l}
+
+data <- data_raw %>% 
+  group_by(Type) %>% 
+  summarise(avg = mean(Calories), 
+            sd = sd(Calories),
+            n = n())
+
+# Utilizamos la T para esta prueba de hipotesis:
+sp = (((data$n[1]-1)*(data$sd[1])^2) + (data$n[2]-1)*(data$sd[2])^2)/nrow(data)
+T = ((data$avg[1]-data$avg[2]) - 0)/sqrt(sp*((1/13) + (1/18)))
+
+pt(T, df = 29, lower.tail = F)
+```
+
+EL valor-p de la prueba es de .1801, por lo que es alto y no rechazamos H_0. Entonces no hay evidancia suficiente para demostrar que las medias son distintas
+
+
+## Ejercicio 3
+(Wasserman) Mendel criaba chícharos de semillas lisas amarillas y de semillas corrugadas verdes. Éstas daban lugar a 4 tipos de descendientes: amarrillas lisas, amarillas corrugadas, verdes lisas y verdes corrugadas. El número de cada una es multinomial con parámetro:
+
+```{r}
+# Con chi-squared
+vec <- c(315, 101, 108, 32)
+vec_ref <- c(9/16, 3/16, 3/16, 1/16)*556
+est <- sum((vec-vec_ref)^2/vec_ref)
+pchisq(est, df =3, lower.tail = FALSE)
+
+est2 <- 2*sum((vec*log(c(315, 101, 108, 32)/556))-(vec*log(c(9/16, 3/16, 3/16, 1/16))))
+pchisq(est2, df =3, lower.tail = FALSE)
+```
+
+En este caso no rechazamos H_0 dado que tenemos que valor-p es alto
+

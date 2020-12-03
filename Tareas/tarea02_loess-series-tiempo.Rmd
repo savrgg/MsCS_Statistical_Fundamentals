@@ -1,0 +1,180 @@
+---
+title: "Untitled"
+author: "tu nombre"
+output: html_document
+---
+
+```{r, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error=TRUE)
+
+# cargamos paquetes
+library(tidyverse)
+```
+
+
+## Series de tiempo
+Consideramos la ventas semanales de un producto a lo largo de 5 años, 
+transformaremos la variable de ventas utilizando el logaritmo. 
+
+1. Describe que observas en la gráfica.
+
+Las ventas tienen una tendencia a la alza, pero esta tendencia parece seguir la forma de un logaritmo, por lo que puede que se vaya estabilizando. 
+
+En cuanto a la seasonality, hay una seasonality marcada cada 50 periodos aproximadamente ya que presenta una caida y subidas notorias
+
+```{r, fig.width=5.5, fig.height = 3}
+library(readr)
+ventas <- read_csv("ventas_semanal.csv")
+head(ventas)
+ggplot(ventas, aes(x = period, y = log(sales.kg))) + 
+  geom_line(size = 0.3)
+```
+
+Intentaremos usar suavizamiento para capturar los distintos tipos de variación
+que observamos en la serie. 
+
+2. Utiliza un suavizador *loess* para capturar la tendencia de la serie.
+
+```{r, fig.width=5.5, fig.height = 3}
+ggplot(ventas, aes(x = period, y = log(sales.kg))) +
+  geom_line(size = 0.3) +
+  geom_smooth(method = "loess", span = 0.1, degree = 1, se = FALSE, size = 1, 
+    color = "red")
+
+fit_trend <- loess(log(sales.kg) ~ period, ventas, span = 0.1, degree = 1)
+
+```
+```{r, fig.width=5.5, fig.height = 3}
+ventas <- 
+  ventas %>% 
+  mutate(res = fit_trend$residuals, 
+         fitted = fit_trend$fitted)
+```
+
+
+3. Ahora calcula los residuales de este ajuste y descríbelos
+mediante un suavizamiento más fino. Verifica que se ha estimado la mayor
+parte de la tendencia, e intenta capturar la variación estacional de los 
+residuales.
+
+```{r, fig.width=5.5, fig.height = 3}
+# tendencia
+ggplot(ventas, aes(x = period, y = fitted)) + 
+  geom_line()
+# residuales
+ggplot(ventas, aes(x = period, y = res)) + 
+  geom_line()
+
+```
+
+```{r, fig.width=5.5, fig.height = 3}
+ventas %>% 
+ggplot(aes(x = period, y = res)) +
+  geom_line(size = 0.3) +
+  geom_smooth(method = "loess", span = 0.1, degree = 1, se = FALSE, size = 1, 
+    color = "red")
+
+fit_season <- loess(fit_trend$residuals ~ ventas$period, span = 0.1, degree = 1)
+
+ventas <- 
+  ventas %>% 
+  mutate(res_estac = fit_season$residuals, 
+         fitted_estac = fit_season$fitted)
+```
+
+4. Grafica los residuales obtenidos después de ajustar el componente 
+estacional para estudiar la componente de mayor frecuencia.
+
+```{r, fig.width=5.5, fig.height = 3}
+ggplot(ventas, aes(x = period, y = fitted_estac)) +
+  geom_line()
+
+ggplot(ventas, aes(x = period, y = res_estac)) +
+  geom_line()
+```
+
+```{r, fig.width=5.5, fig.height = 3}
+ventas %>% 
+  ggplot(aes(x = period))+
+  geom_line(aes(y = sales.kg))+
+  geom_line(aes(y = exp(fitted)+fitted_estac, color = "red"), size = 1)
+```
+
+
+5. **Extra opcional**. Ahora que tenemos nuestra primera estimación de cada una de 
+las componentes, podemos regresar a hacer una mejor estimación de la tendencia. 
+La ventaja de volver es que ahora podemos suavizar más sin que en nuestra 
+muestra compita tanto la variación estacional. Por tanto puedes suavizar un 
+poco menos.
+
+```{r, fig.width=5.5, fig.height = 3}
+ventas <- ventas %>% select(period, sales.kg)
+
+dif <- c(0.05, 0.1, 0.5, 1)
+
+adjust_ventas <- function(value){
+  fit_trend <- loess(log(sales.kg) ~ period, ventas, span = value, degree = 1)  
+  ventas <- 
+    ventas %>% 
+    mutate(res = fit_trend$residuals, 
+           fitted = fit_trend$fitted)
+  
+  x1 <- data.frame(x = ventas$period, y = exp(ventas$fitted)) %>% 
+    ggplot(aes(x, y)) +
+    geom_line()+
+    labs(title = paste0("Using span = ", value))
+  
+  x2 <- data.frame(x = ventas$period, y = ventas$res) %>% 
+    ggplot(aes(x, y)) +
+    geom_line()+
+    labs(title = paste0("Using span = ", value))
+  
+  list(fitted = x1, residuals = x2, ventas = ventas)
+}
+```
+
+
+6. Visualiza el ajuste, genera una gráfica de páneles, en cada uno muestra
+una componente de la serie de tiempo y los residuales.
+
+```{r, fig.width=5.5, fig.height = 3}
+library(gridExtra)
+gridExtra::grid.arrange(
+  adjust_ventas(dif[1])$fitted,
+  adjust_ventas(dif[2])$fitted,
+  adjust_ventas(dif[3])$fitted,
+  adjust_ventas(dif[4])$fitted,
+  ncol = 2
+)
+
+gridExtra::grid.arrange(
+  adjust_ventas(dif[1])$res,
+  adjust_ventas(dif[2])$res,
+  adjust_ventas(dif[3])$res,
+  adjust_ventas(dif[4])$res,
+  ncol = 2
+)
+```
+
+7. Genera una gráfica de cuantiles para los residuales.
+
+primero vemos distribucion:
+```{r, fig.width=5.5, fig.height = 3}
+residuales <- data.frame(
+  adjust_ventas(dif[1])$ventas %>% select(period, res),
+  res2 = adjust_ventas(dif[2])$ventas %>% select(res),
+  res2 = adjust_ventas(dif[3])$ventas %>% select(res),
+  res2 = adjust_ventas(dif[4])$ventas %>% select(res)) %>%
+  gather(variable, value, res:res.3)
+
+residuales %>% 
+ggplot(aes(x = variable, y = value))+
+  geom_boxplot()
+```
+```{r, fig.width=5.5, fig.height = 3}
+ggplot(residuales, aes(sample = value))+
+  stat_qq()+
+  stat_qq_line()+
+  facet_wrap(~variable)
+```
+

@@ -1,0 +1,238 @@
+---
+title: "Tarea-04"
+output:
+  pdf_document: 
+    latex_engine: xelatex
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE)
+```
+
+## Pruebas visuales y Permutación
+
+#### Pruebas de permutación
+
+1. La tabla de datos *Phillies2009* contiene información de la temporada de 
+baseball 2009 para el equipo de Philadelphia *Phillies*, en este ejercicio
+queremos comparar los strikes (`StrikeOuts`) entre los juegos en casa y de 
+visitante:
+
+a) Realiza un *lineup* donde cada panel muestre un diagrama de caja y brazos para 
+la variable de interés separando los juegos jugados en casa (home) y los juegos 
+jugados fuera (away). ¿Puedes localizar los datos verdaderos entre los nulos?
+
+b) Calcula el promedio de strikes por juego en cada grupo (donde grupo se define 
+por Location). 
+
+c) Realiza una prueba de permutación para la diferencia de las medias. Grafica 
+la distribución de referencia y calcula el valor *p* de dos colas.
+
+```{r}
+set.seed(123456)
+# Lectura de datos
+library(tidyverse)
+library(lubridate)
+library(nullabor)
+library(patchwork)
+phillies <- read_csv("Phillies2009.csv")
+
+phillies %>% 
+  ggplot(aes(x = Location, y = StrikeOuts, color = Location)) +
+  geom_boxplot()
+
+phillies %>% 
+  group_by(Location) %>% 
+  summarise(avg = mean(StrikeOuts))
+
+reps <- lineup(null_permute("Location"), phillies, n = 20)
+reps_mezcla <- reps %>%  mutate(grupo_1 = factor(digest::digest2int(Location) %% 177))
+
+
+cuantil <- function(x, probs = c(0,0.25, 0.5, 0.75,1), ...){
+  x_quo <- enquo(x)
+  valores <- quantile(x, probs = probs, names = FALSE, ...)
+  cuantil_nom <- probs
+  tibble(cuantil = cuantil_nom, valor = valores)
+}
+
+grafica_cuantiles <- function(datos, grupo, valor){
+  if(!(".sample" %in% names(datos))){
+    datos$.sample <- 1
+  }
+
+  cuantiles_tbl <- datos %>% group_by({{ grupo }}, .sample) %>%
+    summarise(
+      num = n(),
+      cuantiles = list(cuantil({{ valor }}, c(0.1, 0.25, 0.5, 0.75, 0.9)))) %>%
+    unnest(cols = c(cuantiles))
+
+  grafica <- ggplot(cuantiles_tbl  %>% spread(cuantil, valor),
+                    aes(x = {{ grupo }}, y = `0.5`)) +
+    geom_linerange(aes(ymin= `0.1`, ymax = `0.9`), colour = "gray40") +
+    geom_linerange(aes(ymin= `0.25`, ymax = `0.75`), size = 2, colour = "gray") +
+    geom_point(colour = "salmon", size = 2)
+  grafica
+}
+
+grafica_cuantiles(reps_mezcla, grupo_1, StrikeOuts) + 
+    facet_wrap(~.sample, ncol = 5) + ylab("x") + 
+    labs(caption = "Mediana y percentiles 10% y 90%")+ geom_point(aes(colour = grupo_1)) +
+  theme_minimal()
+
+```
+
+```{r}
+
+(dif_obs <- phillies %>% 
+  mutate(is_home = as.numeric(Location == "Home")) %>% 
+  group_by(Location) %>% 
+  summarise(num_strike = mean(StrikeOuts)) %>% 
+  pivot_wider(names_from = Location, values_from = num_strike) %>% 
+  mutate(diferencia = Away - Home) %>% 
+  pull(diferencia))
+
+reps <- lineup(null_permute("Location"), phillies, n = 10000)
+valores_ref <- reps %>% 
+  mutate(usa_azucar = as.numeric(Location == "Home")) %>% 
+  group_by(.sample, Location) %>% 
+  summarise(num_strike = mean(StrikeOuts)) %>% 
+  pivot_wider(names_from = Location, values_from = num_strike) %>% 
+  mutate(diferencia = Away - Home) 
+```
+
+
+
+```{r}
+g_1 <- ggplot(valores_ref, aes(sample = diferencia)) + geom_qq(distribution = stats::qunif)  +
+    xlab("f") + ylab("diferencia") + labs(subtitle = "Distribución nula o de referencia")
+g_2 <- ggplot(valores_ref, aes(x = diferencia)) + geom_histogram(binwidth = 0.04) + 
+    coord_flip() + xlab("") + labs(subtitle = " ")
+g_1 + g_2
+```
+```{r}
+dist_perm <- ecdf(valores_ref$diferencia)
+# Calculamos el percentil del valor observado
+percentil_obs <- dist_perm(dif_obs)
+
+g_1 <- ggplot(valores_ref, aes(sample = diferencia)) + geom_qq(distribution = stats::qunif)  +
+    xlab("f") + ylab("diferencia") + labs(subtitle = "Distribución nula o de referencia") +
+    geom_hline(yintercept = dif_obs, colour = "red") +
+    annotate("text", x = 0.3, y = dif_obs - 0.05, label = "diferencia observada", colour = "red")
+g_2 <- ggplot(valores_ref, aes(x = diferencia)) + geom_histogram(binwidth = 0.04) + 
+    coord_flip() + xlab("") + labs(subtitle = " ") +
+    geom_vline(xintercept = dif_obs, colour = "red") +
+    annotate("text", x = dif_obs, y = 2000, label = percentil_obs,vjust = -0.2, colour = "red")
+g_1 + g_2 
+
+```
+
+```{r}
+2 * min(dist_perm(dif_obs), (1 - dist_perm(dif_obs)))
+```
+
+
+
+## Pruebas pareadas
+
+En este ejemplo buscamos comparar la diferencia entre dos medicinas 
+para dormir. 
+  - ID es el identificador de paciente, y medicina_1 y medicina_2 son las
+  horas extras de sueño vs. no usar medicina.  
+  - Examina los datos.  
+
+
+```{r}
+library(tidyverse)
+
+dormir <- sleep %>% 
+  pivot_wider(names_from = group, 
+              names_prefix = "medicina_",
+              values_from = extra)
+
+dormir
+```
+
+La pregunta de interés es si una medicina es mejor que otra para prolongar el 
+sueño. Nótese que en este caso, no tenemos grupos, sino mediciones repetidas.
+
+- Escribe la hipótesis nula.
+Sea D_i =  (medicina_1_i - medicina2_i), de manera que D = (D_1, D_2, .... D_n)
+Hipotesis nula
+D = 0
+
+- Nuestra estadística de interés es media de las diferencias entre las medicinas.
+Calcula la diferencia observada.
+```{r}
+dif_obs <- (dormir %>% 
+  mutate(dif = medicina_1 - medicina_2))$dif %>% mean
+  dif_obs
+```
+
+
+- Hay variación entre los pacientes. ¿Tenemos evidencia para rechazar que son 
+iguales? ¿Cómo hacemos nuestra distribución de referencia?
+
+```{r}
+set.seed(2)
+reps <- lineup(null_permute("group"), sleep, n = 10000)
+
+valores_ref <- reps %>% 
+  group_by(.sample, group) %>% 
+  summarise(efec = mean(extra)) %>% 
+  pivot_wider(names_from = group, values_from = efec) %>% 
+  mutate(diferencia = `1` - `2`) 
+
+g_1 <- ggplot(valores_ref, aes(sample = diferencia)) + geom_qq(distribution = stats::qunif)  +
+    xlab("f") + ylab("diferencia") + labs(subtitle = "Distribución nula o de referencia")
+g_2 <- ggplot(valores_ref, aes(x = diferencia)) + geom_histogram(binwidth = 0.04) + 
+    coord_flip() + xlab("") + labs(subtitle = " ")
+g_1 + g_2
+```
+
+
+
+- Haz una gráfica de la distribución de referencia y grafica encima el valor 
+observado en los datos originales.
+
+
+
+```{r}
+dist_perm <- ecdf(valores_ref$diferencia)
+# Calculamos el percentil del valor observado
+percentil_obs <- dist_perm(dif_obs)
+
+g_1 <- ggplot(valores_ref, aes(sample = diferencia)) + geom_qq(distribution = stats::qunif)  +
+    xlab("f") + ylab("diferencia") + labs(subtitle = "Distribución nula o de referencia") +
+    geom_hline(yintercept = dif_obs, colour = "red") +
+    annotate("text", x = 0.3, y = dif_obs - 0.05, label = "diferencia observada", colour = "red")
+g_2 <- ggplot(valores_ref, aes(x = diferencia)) + geom_histogram(binwidth = 0.04) + 
+    coord_flip() + xlab("") + labs(subtitle = " ") +
+    geom_vline(xintercept = dif_obs, colour = "red") +
+    annotate("text", x = dif_obs, y = 2000, label = percentil_obs,vjust = -0.2, colour = "red")
+g_1 + g_2 
+```
+
+
+- Calcula el valor p (justifica porque a una o dos colas).
+
+## Valores-*p*
+
+Cuando usamos simulación para pruebas de permutación, el valor-*p* de una cola
+se puede calcular como 
+
+$$\hat{P}=(X+1)/(N+1)$$
+donde $X$ es el número de estadísticas de prueba remuestreadas que son al menos
+tan extremas como la observada. Supongamos que el verdadero valor *p* (si 
+pudiéramos hacer todas las permutaciones de manera exhaustiva) es $p$   
+̂
+- ¿Cuál es la varianza de $\hat{P}$?
+Podemos ver a X como una distribución binomial o como la suma de variables bernoulli. En el caso que lo veamos como
+la sumatoria de variables bernoulli $X = \sum X_i%, entonces la varianza es: p(1-p)/n 
+
+- ¿Cuál es la varianza de $\hat{P_2}$ para la prueba de dos lados? (suponiendo
+que $p$ no es cercano a $0.5$, donde $p$ es el verdadero valor *p* para la 
+prueba de una cola).
+
+

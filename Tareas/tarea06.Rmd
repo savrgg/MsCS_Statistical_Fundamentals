@@ -1,0 +1,216 @@
+---
+title: "tarea06"
+output:
+  pdf_document: default
+---
+
+
+# EJemplo gamma
+```{r}
+# Envíen un reporte por correo electrónico con 
+# las respuestas (con título fundamentos-tarea06).
+
+library(tidyverse)
+
+#### Ejercicios: teorema central del límite ####
+
+#### Ejemplo 1 ####
+# Consideramos la distribución gamma con parámetro de forma
+# a = 5, tasa lambda = 0.1. Su media teórica es 50 = 5/0.1
+# cuya densidad teórica es
+
+x <- seq(0, 150, 0.01)
+tibble(x = x) %>% 
+  mutate(densidad = dgamma(x, 5, 0.1)) %>% 
+  ggplot(aes(x = x, y = densidad)) + geom_line()
+
+# tomamos una muestra:
+set.seed(232)
+n <- 200
+muestra <- rgamma(n, 5, 0.1)
+
+## La distribución de los datos se ve como sigue 
+# (haz un histograma de la muestra)
+
+# Histograma de los datos -------------------------------------------------
+# ¿Parece tener distribución normal?
+# No parece tener distribución normal, está sesgada a la derecha
+muestra %>% hist
+```
+
+```{r}
+# Ahora consideramos la distribución de muestreo de 
+# la media de esta distribución, con tamaño de muestra
+# fijo n
+medias <- map_dbl(1:5000,  ~ mean(rgamma(n, 5, 0.1)))
+medias_gamma <- tibble(medias = medias)
+
+## checa un histograma, ¿ se ve normal?
+# Si se ve normal la distribución (Xbarra es normal)
+medias_gamma$medias %>% hist()
+```
+
+```{r}
+####### Ejemplo: mezcla de distribuciones
+# Este ejemplo es más complicado. Imaginemos
+# que nuestro modelo teórico es una mezcla
+# de dos poblaciones, una gamma y una normal
+muestrear_pob <- function(n){
+  u <- runif(n) # número aleatorio
+  map_dbl(u, ~ ifelse(.x < 1/2, rgamma(1, 5, 0.1), rnorm(1, 100, 5)))
+}
+
+# El modelo teórico se puede graficar, pero también podemos
+# obetener una aproximación buena haciendo una cantidad grande
+# de simulaciones
+muestra_aprox <- muestrear_pob(10000)
+qplot(muestra_aprox, binwidth= 2)
+
+```
+
+```{r}
+## Ahora consideramos estimar la media de esta
+## distribución con un muestra de tamaño 100
+## ¿Cómo se ve la distribución de muestreo de la media?
+medias <- map_dbl(1:2000,  ~ mean(muestrear_pob(100)))
+  
+medias %>% hist
+```
+
+```{r}
+## grafica un histograma y una gráfica cuantil-cuantil normal
+medias %>% hist()
+qqnorm(medias)
+```
+
+
+```{r}
+#### Ejemplo discreto ####
+# Tomaremos muestra de unos y ceros
+set.seed(1212)
+n_volados <- 200
+muestra <- rbinom(n_volados, 1, prob = 0.7)
+head(muestra)
+
+# la media es la proporción de unos en la muestra,
+# o la proporción de "soles":
+mean(muestra)
+
+## ¿Cuál es la distribución de muestreo para la proporción
+# de soles en la muestra?
+prop_soles <- map_dbl(1:5000,  ~ mean(rbinom(200, 1, .7)))
+prop_soles_tbl <- tibble(prop_soles = prop_soles)  
+## checa un histograma, ¿se ve normal? También ve 
+## una gráfica qq
+
+ggplot(prop_soles_tbl, aes(x = prop_soles)) + 
+  geom_histogram(bins = 10)
+      
+ggplot(prop_soles_tbl, aes(sample = prop_soles)) +
+  geom_qq()+
+  geom_qq_line()
+ 
+```
+
+
+
+```{r}
+#### Error estándar e intervalos bootstrap normales
+    
+## Ejemplo 1: error estándar de una media
+# Retomaremos el ejemplo de la prueba ENLACE de la tarea anterior
+# Para cada tamaño de muestra n = 10, 100, 1000
+# i) Selecciona una muestra y utilizala para estimar la media de las
+#   calificaciones de español 3o de primaria
+# ii) Utiliza bootstrap para calcular el error estándar de tu estimador
+# iii) Grafica la distribución bootstrap
+
+enlace <- read_csv("enlace_15.csv")
+
+# n = 10
+enlace_10 <- sample_n(enlace,10)
+enlace_100 <- sample_n(enlace,100)
+enlace_1000 <- sample_n(enlace,1000)
+
+media_muestras_10 <- 
+  map_dbl(1:5000, ~ enlace_10 %>%  
+            sample_n(10, replace = T) %>%
+            summarise(media_esp = mean(esp_3), .groups = "drop") %>% pull(media_esp)) 
+media_muestras_100 <- 
+  map_dbl(1:5000, ~ enlace_100 %>%  
+            sample_n(100, replace = T) %>%
+            summarise(media_esp = mean(esp_3), .groups = "drop") %>% pull(media_esp)) 
+media_muestras_1000 <- 
+  map_dbl(1:5000, ~ enlace_1000 %>%  
+            sample_n(1000, replace = T) %>%
+            summarise(media_esp = mean(esp_3), .groups = "drop") %>% pull(media_esp)) 
+
+```
+    
+     
+```{r}
+library(gridExtra)
+# 10
+bootstrap <- tibble(media = media_muestras_10)
+g_cuantiles <- ggplot(bootstrap, aes(sample = media)) + geom_qq(distribution = stats::qunif)
+g_histograma <- ggplot(bootstrap, aes(x = media)) + geom_histogram(binwidth = 2)
+grid.arrange(g_cuantiles, g_histograma, ncol = 1)
+```
+
+
+
+```{r}
+# 100
+bootstrap <- tibble(media = media_muestras_100)
+g_cuantiles <- ggplot(bootstrap, aes(sample = media)) + geom_qq(distribution = stats::qunif)
+g_histograma <- ggplot(bootstrap, aes(x = media)) + geom_histogram(binwidth = 2)
+grid.arrange(g_cuantiles, g_histograma, ncol = 1)
+```
+
+
+
+
+```{r}
+# 1000
+bootstrap <- tibble(media = media_muestras_1000)
+g_cuantiles <- ggplot(bootstrap, aes(sample = media)) + geom_qq(distribution = stats::qunif)
+g_histograma <- ggplot(bootstrap, aes(x = media)) + geom_histogram(binwidth = 2)
+grid.arrange(g_cuantiles, g_histograma, ncol = 1)
+```
+
+
+```{r}
+mean(media_muestras_10)
+mean(media_muestras_100)
+mean(media_muestras_1000)
+
+sd(media_muestras_10)
+sd(media_muestras_100)
+sd(media_muestras_1000)
+```
+
+
+```{r}
+# Retoma la muestra de tamaño 100, y calcula la correlación entre las
+# calificaciones de español 3o y 6o de primaria
+# Utiliza bootstrap para calcular el error estandar 
+
+cor_muestras_100 <- 
+  map_dbl(1:5000, ~ enlace_100 %>%  
+            sample_n(100, replace = T) %>%
+            summarise(media_esp = cor(esp_3, esp_6), .groups = "drop") %>% pull(media_esp)) 
+
+
+bootstrap <- tibble(cor = cor_muestras_100)
+g_cuantiles <- ggplot(bootstrap, aes(sample = cor)) + geom_qq(distribution = stats::qunif)
+g_histograma <- ggplot(bootstrap, aes(x = cor)) + geom_histogram(binwidth = .01)
+grid.arrange(g_cuantiles, g_histograma, ncol = 1)
+
+```
+
+```{r}
+
+mean(cor_muestras_100)
+sd(cor_muestras_100)
+
+```

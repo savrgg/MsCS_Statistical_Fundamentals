@@ -1,0 +1,173 @@
+---
+title: "Tarea 05"
+output: html_document
+---
+
+1. **Proporciones.** Usaremos datos de reincidencia en conducta criminal del
+estado de Iowa, este estado sigue a los delincuentes por un periodo de 3 años y
+registra el número de días hasta reincidencia para aquellos que son readmitidos 
+en prisión. El deprtamento de correcciones utiliza los datos de
+reincidencia para evaluar sus programas de prevención de recaída en 
+conducta criminal.
+
+Los datos Recidivism contienen información de todos los delincuentes 
+condenados por dos tipos de delito durante 2010 (*Recid* indica
+si recayeron en conducta criminal).
+
+* De éstos $31.6\%$ reincidieron y volvieron a prisión. Utiliza simulación
+para aproximar la simulación muestral de $\hat{p}$, la proporción 
+de delincuentes que reincidieron para muestras de tamaño 25.
+
+```{r}
+set.seed(119718)
+library(tidyverse)
+recidivism <- read_csv("Recidivism.csv")
+
+muestras_25 <- map_dfr(1:1000, function(x){
+  data.frame(sample = x, mean_sample = sum(sample_n(recidivism,25)$Recid=="Yes")/25)
+})
+
+mean(muestras_25$mean_sample)
+```
+
+
+* Calcula el error estándar de $\hat{p}$, y compáralo con el teórico
+$\sqrt{p(1-p)/n}$.
+```{r}
+sqrt(var(muestras_25$mean_sample)) # 0.09299315
+sqrt(.316*(1-.316)/25) # 0.09298258
+```
+
+* Repite para muestras de tamaño 250 y compara.
+
+```{r}
+muestras_250 <- map_dfr(1:1000, function(x){
+  data.frame(sample = x, mean_sample = sum(sample_n(recidivism,250)$Recid=="Yes")/250)
+})
+
+mean(muestras_250$mean_sample)
+sqrt(var(muestras_250$mean_sample))
+sqrt(.316*(1-.316)/250)
+
+```
+
+
+```{r}
+bind_rows(
+  muestras_250 %>% mutate(col = "m250"),
+  muestras_25 %>% mutate(col = "m25")
+) %>% 
+  ggplot(aes(x = mean_sample)) + geom_density()+
+  facet_wrap(~col)
+```
+
+```{r}
+bind_rows(
+  muestras_250 %>% mutate(col = "m250"),
+  muestras_25 %>% mutate(col = "m25")
+) %>% 
+  ggplot(aes(x = mean_sample)) + geom_histogram()+
+  facet_wrap(~col)
+```
+
+2. **El error estándar de una media.** Supongamos que $x$ es una variable
+aleatoria que toma valores en los reales con distribución de probabilidad $F$.
+Denotamos por $\mu$ y $\sigma^2$ la media y varianza de $F$,
+
+$$\mu = E(x),$$ 
+$$\sigma^2=var(x)=E[(x-\mu)^2]$$
+Ahora, sea $(X_1,...,X_n)$ una muestra aleatoria de $F$, de tamaño $n$, 
+la media de la muestra $\bar{X}=\sum_{i=1}^nX_i/n$ tiene:
+
+* esperanza $\mu$,
+
+* varianza $\sigma^2/n$.
+
+En palabras: la esperanza de $\bar{X}$ es la misma que la esperanza de $x$, pero
+la varianza de $\bar{X}$ es $1/n$ veces la varianza de $x$, así que entre
+mayor es la $n$ tenemos una mejor estimación de $\mu$.
+
+En el caso del estimador de la media $\bar{X}$, el error estándar quedaría
+
+$$ee(\bar{X}) = [var(\bar{X})]^{1/2}= \sigma/ \sqrt{n}.$$
+Entonces, 
+
+* Consideramos los datos de ENLACE edo. de México (ENLACE era una prueba estandarizada que se aplicaba a todos los alumnos de primaria en México), y la columna de calificaciones de español 3^o^ de primaria (`esp_3`). 
+
+```{r}
+enlace <- read_csv("enlace_15.csv")
+```
+
+```{r}
+enlace$esp_3 %>% mean
+enlace$esp_3 %>% var %>% sqrt
+```
+
+- Genera un histograma de las calificaciones de 3^o^ de primaria. Calcula la 
+media y la desviación estándar.
+```{r}
+enlace %>% ggplot(aes(x = esp_3)) + geom_histogram()
+```
+
+
+- Para tamaños de muestra $n = 10, 100, 1000$:
+
+- Aproximareos la distribución muestral: 
+i) simula 5,000 muestras aleatorias, ii) calcula la media en cada muestra, iii)
+Realiza un histograma de la distribución muestral de las medias (las medias del
+paso anterior) iv) aproxima el error estándar calculando la desviación estándar
+de las medias del paso ii.
+
+```{r}
+# n = 10
+enlace_10 <- map_dfr(1:5000, function(x){
+  data.frame(sample = x, mean_sample = mean(sample_n(enlace,10)$esp_3))
+})
+
+# n = 100
+enlace_100 <- map_dfr(1:5000, function(x){
+  data.frame(sample = x, mean_sample = mean(sample_n(enlace,100)$esp_3))
+})
+
+# n = 1000
+enlace_1000 <- map_dfr(1:5000, function(x){
+  data.frame(sample = x, mean_sample = mean(sample_n(enlace,1000)$esp_3))
+})
+```
+
+```{r}
+bind_rows(
+  enlace_10 %>% mutate(col = "e10"),
+  enlace_100 %>% mutate(col = "e100"),
+  enlace_1000 %>% mutate(col = "e1000")
+) %>% 
+  ggplot(aes(x = mean_sample)) + geom_density() +
+  facet_wrap(~col)
+```
+
+```{r}
+# medias (insesgado)
+enlace$esp_3 %>% mean # 552.9911
+enlace_10$mean_sample  %>% mean # 552.9212
+enlace_100$mean_sample %>% mean # 552.9934
+enlace_1000$mean_sample %>% mean # 552.9995
+```
+```{r}
+# varianzas
+var_pob <- enlace$esp_3 %>% var
+
+var_pob/10
+enlace_10$mean_sample  %>% var
+
+var_pob/100
+enlace_100$mean_sample %>% var
+
+var_pob/1000
+enlace_1000$mean_sample %>% var
+```
+
+- Calcula el error estándar de la media para cada tamaño de muestra usando la
+fórmula derivada arriba y compara con tus simulaciones.
+
+- ¿Cómo se comparan los errores estándar correspondientes a los distintos 
+tamaños de muestra? 

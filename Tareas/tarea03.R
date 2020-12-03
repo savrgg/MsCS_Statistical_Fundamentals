@@ -1,0 +1,8 @@
+Fundamentos-tarea03
+
+El estudio posterior muestra que el grupo control tiene mayor peso y talla que el grupo de tratamiento, la causa de esto puede atribuirse a distintos factores. Por ejemplo, puede ser que los infantes en el grupo control hayan tenido su periodo de crecimiento antes que el grupo tratamiento, como resultado la ganancia en peso puede no atribuirse al suplemento alimenticio. No podemos utilizar los estudios para inferir causalidad debido a que se aplicó a poblaciones distintas.
+Pertenece a no aleatorizado / no aleatorizado. Este estudio podría estar sesgado a población sana por que es probable que poblacionalmente con presión arterial alta decidan no tomar el estudio por cuestiones personales. Es necesario realizar el supuesto que son representativos de la población. 
+No se puede inferir causalidad. Existe una correlación entre el consumo de alcohol y la demencia, pero dado el ejercicio no es posible inferir la causalidad
+Igual que el ejercicio pasado, hay una correlación. Estos resultados pueden usarse para realizar un estudio de causalidad, en donde una variable podría explicar el nivel de colesterol alto. Por ejemplo si son niños más sedentarios puede tener razón que tengan un nivel de colesterol más alto, pero tendría que realizarse un estudio específico.
+Solamente por la correlación que hay no se puede deducir causalidad. Pero en este ejemplo en particular pueden investigarse algunas relaciones causales por ejemplo la temperatura, el aumento de contagios, etc
+En un experimento aleatorio se busca reproducir un fenómeno sin saber el resultado final, en cambio la muestra aleatoria es solamente la manera en que se genera el muestreo. 

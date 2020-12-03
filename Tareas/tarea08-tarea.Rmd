@@ -1,0 +1,212 @@
+---
+title: "08-Tarea"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. ENIGH
+
+Para este ejercicio usaremos los datos de la [ENIGH 2014](https://www.inegi.org.mx/programas/enigh/tradicional/2014/). En particular
+las variables alimentos, vestido, vivienda, salud, comunica, educacion y esparci 
+(esparcimiento) que indican el gasto trimestral en cada una de las categorías. 
+
+1. Calcula los deciles de ingreso usando la variable de ingreso corriente (ing_cor).
+
+Debes tomar en cuenta el diseño de la muestra, puedes usar la función
+`survey_quantile()` del paquete `srvyr` o `svyquantile()` del paquete `survey`.
+Reporta las estimaciones y sus errores estándar usando el bootstrap de Rao y Wu.
+
+```{r, message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(srvyr)
+
+concentrado_hogar <- read_csv("concentradohogar.csv")
+hogar <- concentrado_hogar %>% 
+    select(folioviv, foliohog, est_dis, upm, factor_hog, ing_cor, alimentos, 
+        vestido, vivienda, salud, transporte, comunica, educacion, esparci) 
+
+enigh_design <- hogar %>% 
+    as_survey_design(ids = upm, weights = factor_hog, strata = est_dis)
+
+set.seed(7398731)
+enigh_boot <- enigh_design %>% 
+    as_survey_rep(type = "subbootstrap", replicates = 500)
+
+quantiles <- enigh_boot %>% 
+    srvyr::summarise(mean_ingcor = survey_quantile(ing_cor, c(seq(.1, .9, by =.1))))
+quantiles
+```
+
+2. Crea una nueva variable que indique el decil de ingreso para cada hogar. 
+Tips: 
+1) una función que puede resultar útil es `cut2()` (de `Hmisc`), 
+2) si usas el paquete `srvyr` puedes usar `mutate()` sobre
+el objeto `survey` con pesos de replicaciones bootstrap.
+
+```{r}
+library(Hmisc)
+enigh_boot <- enigh_boot %>% 
+  srvyr::mutate(corte = Hmisc::cut2(ing_cor, unlist(quantiles %>% select(!contains("se")))))
+```
+
+3. Estima para cada decil, el porcentaje del gasto 
+en cada categoría (), reporta el error estándar de las estimaciones, usa 
+el bootstrap de Rao y Wu. 
+Tip: 
+1) agrega una variable que indica para cada hogar el porcentaje de gasto en cada categoría, 
+2) si usas srvyr puedes usar la función `group_by()` para estimar la media del porcentaje de gasto por decil.
+
+```{r}
+library(Hmisc)
+por_sec <- enigh_boot %>% 
+  srvyr::mutate(alimentos_perc = alimentos/ing_cor,
+                vestido_perc = vestido/ing_cor,
+                vivienda_perc = vivienda/ing_cor,
+                salud_perc = salud/ing_cor, 
+                transporte_perc = transporte/ing_cor, 
+                comunica_perc = comunica/ing_cor, 
+                educacion_perc = educacion/ing_cor, 
+                esparci_perc = esparci/ing_cor
+                ) 
+```
+
+
+```{r}
+medias <- 
+por_sec %>% 
+srvyr::group_by(corte) %>% 
+  srvyr::summarise(
+    mean_alimentos = survey_mean(alimentos_perc, na.rm = T),
+    mean_vivienda = survey_mean(vivienda_perc, na.rm = T),
+    mean_salud = survey_mean(salud_perc, na.rm = T), 
+    mean_transporte = survey_mean(transporte_perc, na.rm = T), 
+    mean_comunica = survey_mean(comunica_perc, na.rm = T), 
+    mean_educacion = survey_mean(educacion_perc, na.rm = T), 
+    mean_esparci = survey_mean(esparci_perc, na.rm = T)
+    )
+```
+
+4. Realiza una gráfica con las estimaciones del paso 3.
+
+```{r}
+medias %>% select(corte, contains("se")) %>% 
+  tidyr::gather(variable, value, mean_alimentos_se:mean_esparci_se) %>% 
+  mutate(variable = stringr::str_replace(variable, "_se", "")) %>% 
+  purrr::set_names(c("corte", "variable", "se")) %>% 
+  left_join(
+    medias %>% select(!contains("se")) %>% 
+    tidyr::gather(variable, value, mean_alimentos:mean_esparci)  %>% 
+    purrr::set_names(c("corte", "variable", "media"))
+  ) %>% 
+  ggplot(aes(x = corte))+
+  geom_point(aes(y = media))+
+  geom_linerange(aes(ymin = media-2*se, ymax = media+2*se))+
+  facet_wrap(~variable, scales = "free")
+```
+
+
+## 2. Componentes Principales
+
+Los datos _marks_ (Mardia, Kent y Bibby, 1979) contienen los puntajes de 88 
+estudiantes en 5 pruebas: mecánica, vectores, álgebra, análisis y estadística.
+Cada renglón corresponde a la calificación de un estudiante en cada prueba. 
+Para este ejercicio no es necesario que conozcas componentes principales pues
+puedes implementar el bootstrap siguiendo el código propuesto y discutiremos 
+los detalles del análisis en la próxima clase.
+
+```{r leer_marks}
+data(marks, package = "ggm")
+glimpse(marks)
+```
+
+Un análisis de componentes principales proseguiría como sigue:
+
+```{r pc, fig.height=3, fig.width=3}
+pc_marks <- princomp(marks)
+summary(pc_marks)
+loadings(pc_marks)
+plot(pc_marks, type = "lines")
+```
+
+Y graficamos:
+
+```{r}
+biplot(pc_marks)
+```
+
+Los cálculos de un análisis de componentes principales involucran la matriz de 
+covarianzas empírica $G$ (estimaciones _plug-in_)
+
+$$G_{jk} = \frac{1}{88}\sum_{i=1}^88(x_{ij}-\bar{x_j})(x_{ik}-\bar{x_k})$$
+
+para $j,k=1,2,3,4,5$, y donde $\bar{x_j} = \sum_{i=1}^88 x_{ij} / 88$ (la media 
+de la i-ésima columna).
+
+```{r}
+G <- cov(marks) * 87 / 88
+G
+```
+
+Los _pesos_ y las _componentes principales_ no son mas que los eigenvalores y 
+eigenvectores de la matriz de covarianzas $G$, estos se calculan a través de una 
+serie de de manipulaciones algebraicas que requieren cálculos del orden de p^3^
+(cuando G es una matriz de tamaño p$\times$p).
+
+```{r}
+eigen_G <- eigen(G)
+lambda <- eigen_G$values
+v <- eigen_G$vectors
+lambda
+v
+```
+
+1. Proponemos el siguiente modelo simple para puntajes correlacionados:
+
+$$\textbf{x}_i = Q_i \textbf{v}$$
+
+donde $\textbf{x}_i$ es la tupla de calificaciones del i-ésimo estudiante, 
+$Q_i$ es un número que representa la habilidad del estudiante y $\textbf{v}$ es
+un vector fijo con 5 números que aplica a todos los estudiantes. Si este modelo
+simple fuera cierto, entonces únicamente el $\hat{\lambda}_1$ sería positivo
+y $\textbf{v} = \hat{v}_1$.
+Sea $$\hat{\theta}=\sum_{i=1}^5\hat{\lambda}_i$$
+el modelo propuesto es equivalente a $\hat{\theta}=1$, inculso si el modelo es
+correcto, no esperamos que $\hat{\theta}$ sea exactamente uno pues hay ruido en 
+los datos.
+
+```{r}
+theta_hat <- lambda[1]/sum(lambda)
+theta_hat
+```
+
+El valor de $\hat{\theta}$ mide el porcentaje de la varianza explicada en la 
+primer componente principal, ¿qué tan preciso es  $\hat{\theta}$? La complejidad
+matemática en el cálculo de $\hat{\theta}$ es irrelevante siempre y cuando 
+podamos calcular  $\hat{\theta}^*$ para una muestra bootstrap, en esta caso una
+muestra bootsrtap es una base de datos de 88 $\times$ 5 $\textbf{X}^*$, donde las
+filas $\bf{x_i}^*$ de $\textbf{X}^*$ son una muestra aleatoria de tamaño
+88 de la verdadera matriz de datos.
+
+- Utiliza bootstrap para calcular el error estándar de $\hat{\theta}$.
+
+
+```{r}
+sim <- purrr::map_df(1:5000, function(x){
+  pc_marks <- princomp(sample_n(marks,88, replace = T) )
+  data.frame(muestra = x, valor = ((pc_marks$sdev)^2)[1]/sum(((pc_marks$sdev)^2)))
+})
+```
+
+- Grafica la distribución bootstrap.
+
+```{r}
+sim %>% ggplot()+
+  geom_histogram(aes(valor))
+```
+
