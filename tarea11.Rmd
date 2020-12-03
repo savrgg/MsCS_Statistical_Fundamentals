@@ -1,0 +1,64 @@
+---
+title: "tarea11"
+author: "Salvador Garcia"
+date: "11/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+success_prob = 0.5
+data = 50
+
+# Domain
+theta_range = seq(0, 1, length.out = 1000)
+
+# Prior
+a = 1
+b = 1
+prior = dbeta(x = theta_range, shape1 = a, shape2 = b)
+```
+
+```{r}
+prior %>% hist
+```
+
+```{r}
+a<-1
+b<-1
+n<-50
+x<-30
+p<-seq(0,1,0.001)
+prior<-dbeta(p,a,b)
+post<-dbeta(p,a+x,b+n-x)
+
+p1 <- data.frame(
+  p = p, 
+  post = post
+) 
+p1 %>% 
+  ggplot(aes(x = p, y = post))+
+  geom_line()
+```
+
+```{r}
+a<-60
+b<-40
+n<-50
+x<-30
+p<-seq(0,1,0.001)
+prior<-dbeta(p,a,b)
+post<-dbeta(p,a+x,b+n-x)
+
+data.frame(
+  p = p, 
+  post = post
+) %>% 
+  ggplot(aes(x = p, y = post))+
+  geom_line()+
+  geom_line(data = p1, aes(x = p, y = post), color = "red")
+```
+
+
+
+La primera distribución tiene una mayor amplitud que la segunda esto debido a que estamos añadiendo información extra con la prior

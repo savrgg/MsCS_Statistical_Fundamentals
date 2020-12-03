@@ -1,0 +1,49 @@
+---
+title: "Tarea 12"
+author: "Salvador Garcia"
+date: "11/30/2020"
+output: html_document
+---
+
+```{r, include=FALSE}
+
+```
+
+**Priori:**
+
+$p(x|\theta) = \frac{1}{\sqrt{2\pi\sigma^2}} \exp(-\frac{1}{2\sigma^2} (x-\theta)^2)$
+
+**Likelihood:**
+
+$p(\theta) = \frac{1}{\sqrt{2\pi\tau^2}} \exp(-\frac{1}{2\tau^2} (\theta-\mu)^2)$
+
+**Para la distribución posterior:**
+
+$p(\theta|x) \propto p(x|\theta)p(\theta)$
+
+**Podemos eliminar las constantes de cada una de las distribuciones normales:**
+
+$p(\theta|x) \propto\exp(-\frac{1}{2\sigma^2} \sum_i(x_i-\theta)^2)  \exp(-\frac{1}{2\tau^2} (\theta-\mu)^2)$
+
+**Aplicando propiedades de exponencial:**
+
+$p(\theta|x) \propto\exp(-\frac{1}{2\sigma^2} \sum_i(x_i-\theta)^2 - \frac{1}{2\tau^2} (\theta-\mu)^2)$
+
+**Como nuestra variable es $\theta$, podemos desarrollar los cuadrados quitar las "constantes":**
+
+$p(\theta|x) \propto\exp(-\frac{1}{2\sigma^2} \sum_i(\theta^2-2\theta x_i) - \frac{1}{2\tau^2} (\theta^2-2\theta \mu)$
+
+$p(\theta|x) \propto\exp(-\frac{1}{2} (\theta^2 (\frac{n}{\sigma^2}+\frac{1}{\theta^2}) - 2 \theta (\frac{\sum_i x_i}{\sigma^2} + \frac{\mu}{\tau^2}))$
+
+**Esto constituye el núcleo de una normal con:**
+
+$\sigma^2 = \frac{1}{(\frac{n}{\sigma^2}+\frac{1}{\theta^2})}$ y $mu = \frac{\sum_i x_i}{\sigma^2} + \frac{\mu}{\tau^2}$
+
+
+
+
+
+
+
+
+
