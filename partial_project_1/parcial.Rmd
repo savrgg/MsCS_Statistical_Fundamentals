@@ -21,7 +21,6 @@ library(GGally)
 library(huxtable)
 library(purrr)
 library(data.table)
-library(nullabor)
 library(rsample)
 library(Hmisc)
 library(readr)
@@ -37,7 +36,7 @@ Considera la tabla de datos dada en tabla_nber_th.csv. Es la tabla de frecuencia
   * Nivel de educación en 1969 (esta incluye años de escuela en 1943 más estudios posteriores a la guerra). E4 es el nivel más alto y E1 es el nivel más bajo.
   
 ```{r 1, include=TRUE}
-tabla_nber_th <- read_csv("tabla_nber_th.csv") #Importamos la tabla a analizar
+tabla_nber_th <- read_csv("data/tabla_nber_th.csv") #Importamos la tabla a analizar
 head(tabla_nber_th) #Observamos primeros registros
 ```  
 1. ¿Qué relación existe entre aptitud (1943) y el nivel de educación (1969)? Describe esta relación usando tablas de porcentajes y de índices (o perfiles).
@@ -332,7 +331,7 @@ la supervivencia en días. Trabaja con los datos en escala logarítimica.
 La información de `ascorbate.csv` nos indica la supervivencia en días que pacientes con 2 tipos de cáncer obtuvieron al medicarse con ascorbato. Realizaremos una prueba de hipótesis visual para determinar si existe diferencia entre la supervivencia de un tipo de cancer con respecto al otro.
 ```{r Ascorbato, include=TRUE}
 # base de datos
-data_ascor = read.csv("ascorbate.csv") #%>% 
+data_ascor = read.csv("data/ascorbate.csv") #%>% 
 #filter(!is.na(stomach), !is.na(breast))
 str(data_ascor)
 head(data_ascor)
@@ -447,7 +446,7 @@ más moderadas. Por su parte, valores altos en vivienda indican costos altos
 para una casa familiar simple. 
 
 ```{r import3, include=TRUE}
-places <- read_csv("places.csv")
+places <- read_csv("data/places.csv")
 head(places)
 ```  
 
@@ -459,7 +458,7 @@ Para medir el efecto una prueba de hipótesis de correlación es adecuada,
 donde $H_0: \rho = 0$ y $H_1: \rho != 0$:
 
 ```{r 4.1, include=TRUE}
-places_raw <- read.csv("places.csv", row.names = 1, sep = "") %>% dplyr::select(Climate, HousingCost)
+places_raw <- read.csv("data/places.csv", row.names = 1, sep = "") %>% dplyr::select(Climate, HousingCost)
 
 dif_obs <- 
   places_raw %>% 
@@ -600,7 +599,7 @@ warning: si se colocó señal de alerta en el sitio 1 indica que si había seña
 La información de `amis` nos indica velocidades de coches en millas por hora en la ciudad de Cambridgeshire. Para cada medición tenemos información de otras variables.
 ```{r import4, include=TRUE}
 # base de datos
-data_amis = read.csv("amis.csv")
+data_amis = read.csv("data/amis.csv")
 str(data_amis)
 ```
 
