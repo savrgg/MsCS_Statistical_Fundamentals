@@ -1,0 +1,935 @@
+---
+title: "Fundamentos de Estadística"
+author: "Por: Luis Alpizar (121369), Salvador García (119718) y Mario Rodríguez (164471)"
+output: html_document
+---
+
+## Examen Final {.tabset .tabset-fade}
+
+### Setup
+
+**Inicialización:** Llamamos a todas nuestras librerías:
+```{r setup, include=TRUE, cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE)
+library(tidyverse)
+library(janitor)
+library(kableExtra)
+library(patchwork)
+library(gridExtra)
+library(MASS)
+library(GGally)
+library(huxtable)
+library(purrr)
+library(data.table)
+library(rsample)
+library(Hmisc)
+library(readr)
+library(formattable)
+library(foreign)
+library(tidyverse)
+library(usmap)
+library(textshape)
+library(zipcodeR)
+data(zipcode)
+```
+
+### 1. Pruebas de hipótesis
+
+De acuerdo a una encuesta en EUA, 26% de los residentes adultos de Illinois han 
+terminado la preparatoria. Un investigador sospecha que este porcentaje es
+menor en un condado particular del estado. Obtiene una muestra aleatoria de 
+dicho condado y encuentra que 69 de 310 personas en la muestra han completado
+la preparatoria. Estos resultados soportan su hipótesis? (describe tu elección de
+prueba de hipótesis, valor p y conclusión).
+
+**Respuesta:**
+
+Sea $p$ la proporción de adultos que han terminado la preparatoria, proponemos la
+siguiente prueba de hipótesis:
+
+$H_0: p \geq 0.26$
+
+$H_A: p <  0.26$
+
+Aprovechando las características del estimador de proporciones (asintóticamente normal), aplicamos una prueba Wald. 
+```{r 1_1}
+# Calcular los elementos de la prueba de Wald
+p_hat = 69/310
+ee = sqrt(p_hat * (1 - p_hat) / 310)
+# prueba
+w = (p_hat - 0.26)/ee
+w
+```
+
+Estimamos el valor p a 1 cola pues buscamos demostrar que la proporción de residentes adultos de Illinois con preparatoria terminada es menor a 26%.
+
+```{r 1_2}
+valor_p <- (1 - pnorm(abs(w)))
+valor_p * 100
+```
+
+Y tenemos que con 5.6% de probabilidad el valor observado de 22% parece fortuito como para sostener la hipótesis nula. Es decir, tenemos evidencia suficiente para rechazar que la proporción de residentes adultos de Illinois con preparatoria terminada es mayor o igual a 26%. 
+
+```{r}
+ggplot(data = data.frame(x = c(-3, 3)), aes(x)) +
+  stat_function(fun = dnorm, n = 310, args = list(mean = 0, sd = 1)) + 
+  theme_minimal() +
+  labs(x = "", 
+       y = "Distribución Normal", 
+       title = "Gráfica de la prueba de hipótesis", 
+       subtitle = "Rojo: Región de Rechazo con alpha = 0.10. Naranja: Valor del estadístico", 
+       caption = "n = 310") +
+  geom_vline(xintercept = -1.281552, color = "red") +
+  geom_rect(aes(xmin=-Inf,xmax=-1.281552,ymin=0,ymax=.5),
+            alpha=0.1,
+            fill="red")+
+  geom_vline(xintercept = w, color = "orange")
+```
+
+
+Cabe mencionar que realizamos la prueba aprovechando los resultados del Teorema Central del Límite (TCL) y la normalidad del estimador. Si realizamos la prueba con cálculo exacto tenemos que:
+
+```{r 1_3}
+valor_p <- pbinom(q = 69, size = 310, prob = 0.26, lower.tail = T)
+valor_p * 100
+```
+
+La probabilidad de observar 69 (o menos) de 310 adultos con preparatoria terminada es de 7.3%, lo cual confirma el resultado de la prueba anterior. La hipótesis nula es incorrecta.
+
+
+### 2. Relación entre bootstrap e inferencia bayesiana
+
+Consideremos el caso en que tenemos una única observación $x$ proveniente de 
+una distribución normal
+
+$$x \sim N(\theta, 1)$$
+
+Supongamos ahora que elegimos una distribución inicial Normal.
+
+$$\theta \sim N(0, \tau)$$ 
+
+dando lugar a la distribución posterior (como vimos en la tarea)
+
+$$\theta|x \sim N\bigg(\frac{x}{1 + 1/\tau}, \frac{1}{1+1/\tau}\bigg)$$ 
+
+Ahora, entre mayor $\tau$, más se concentra la posterior en el estimador de
+máxima verosimilitud $\hat{\theta}=x$. En el límite, cuando $\tau \to \infty$
+obtenemos una inicial no-informativa (constante) y la distribución posterior
+
+$$\theta|x \sim N(x,1)$$
+
+Esta posterior coincide con la distribución de bootstrap paramétrico en que generamos valores $x^*$ de $N(x,1)$, donde $x$ es el estimador de máxima
+verosimilitud.
+
+Lo anterior se cumple debido a que utilizamos un ejemplo Normal pero también 
+se cumple aproximadamente en otros casos, lo que conlleva a una correspondencia
+entre el bootstrap paramétrico y la inferencia bayesiana. En este caso, la
+distribución bootstrap representa (aproximadamente) una distribución posterior 
+no-informartiva del parámetro de interés. Mediante la perturbación en los datos
+el bootstrap aproxima el efecto bayesiano de perturbar los parámetros con la
+ventaja de ser más simple de implementar (en muchos casos).  
+*Los detalles se pueden leer en _The Elements of Statistical Learning_ de 
+Hastie y Tibshirani.
+
+Comparemos los métodos en otro problema con el fin de apreciar la similitud en 
+los procedimientos: 
+
+Supongamos $x_1,...,x_n \sim N(0, \sigma^2)$, es decir, los datos provienen de 
+una distribución con media cero y varianza desconocida.
+
+En los puntos 2.1 y 2.2 buscamos hacer inferencia del parámetro $\sigma^2$.
+
+**2.1 Bootstrap paramétrico.**
+
+* Escribe la función de log-verosimilitud y calcula el estimador de máxima 
+verosimilitud para $\sigma^2$.  Supongamos que observamos los datos 
+`x` (en la carpeta datos), ¿Cuál es tu estimación de la varianza?
+
+**Respuesta:**
+
+Al calcular analíticamente la función de log verosimilitud se considera la likelihood y prior de las funciones. De esta forma:
+
+La normal sigue la siguiente distribución:
+$$
+f(x) = \frac{1}{\sqrt{2\pi \sigma^2}} \exp\Bigg(\frac{1}{2\sigma^2}(x -\mu)^2\Bigg)
+$$
+
+De manera que, dada una muestra $x_1, x_2, x_3, ..., x_n$, se puede escribir la Likelihood de la siguiente forma: 
+
+$$
+L(x) = \frac{1}{ ( 2\pi \sigma^2)^{n/2}} \exp(\frac{1}{2\sigma^2}\sum_i(x_i -\mu)^2)
+$$
+
+Por lo tanto, usando $a = \sigma^2$ es intuitivo expresar la log-likelihood como:
+$$
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(\sigma^2) - \frac{1}{2\sigma^2}\sum_i (x_i-\mu)^2 \\
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(a) - \frac{1}{2a}\sum_i (x_i-\mu)^2 
+$$
+Al derivarparcialmente con respecto a $\sigma^2$ e igualando a 0, obtenemos la siguiente expresión:
+$$
+\frac{\partial l(x)}{\partial a} = -\frac{n}{2a} - \Bigg[ \frac{1}{2}\sum_i (x_i-\mu)^2 \Bigg]\Bigg[ -\frac{1}{a^2}  \Bigg] \\
+-\frac{n}{2a} + \Bigg[ \frac{1}{2a^2}\sum_i (x_i-\mu)^2 \Bigg] \\
+\frac{1}{2a} \Bigg[ \frac{1}{a} \sum_i (x_i-\mu)^2 - n \Bigg] = 0 \\
+a = \frac{\sum_i (x_i-\mu)^2}{n}
+$$
+
+De esta forma, el estimador MLE de $\sigma$ lo podemos expresar como:
+
+$$
+\hat{\sigma}^2 = \frac{\sum_i (x_i-\mu)^2}{n}
+$$
+
+Para encontrarla con la función optim como vimos en clase, en lugar de analíticamente, hacemos uso de la funcion crear_log_p. Esta funcion nos ayuda a generar las funciones log_p. 
+
+```{r 2_1_1}
+# La función crear_log_p crea una funcion llamada log_p que recibe dos parámetros (media, sigma) tal que se estandariza la funcion y se calcula su respectiva log verosimilitud
+crear_log_p <- function(x){
+  log_p <- function(pars){
+    media = pars[1]
+    desv_est = pars[2]
+    z <- (x - media) / desv_est
+    log_verosim <- -(log(desv_est) +  0.5 * mean(z^2))
+    log_verosim
+  }  
+  log_p
+}
+```
+
+Con esto procedemos a cargar los datos y optimizarlo con la función optim:
+
+```{r 2_1_2}
+load("data/x.RData")
+muestra <- x
+
+var_sesgada <- sum((x-mean(x))^2)/length(x)
+var_insesgada <- sum((x-mean(x))^2)/(length(x)-1)
+var(x)
+
+log_p <- crear_log_p(muestra)
+
+res <- 
+  optim(
+    par = c(0, 0.5),
+    fn = log_p, 
+    control = list(fnscale = -1, maxit = 10000), 
+    method = "Nelder-Mead"
+    )
+
+est_mle <- 
+  dplyr::tibble(
+    parametro = c("media", "sigma"), 
+    estimador = res$par
+    ) %>% 
+  textshape::column_to_rownames("parametro")
+```
+
+Al comparar el estimador que calculamos analíticamente con el proporcionado con la función optim, vemos que solamente hay una diferencia de:
+
+```{r 2_1_3}
+sqrt(var_sesgada)-res$par[2]
+```
+
+Cuando se usa función *var* de R, nos toma la segunda forma que es la versión insesgada. Pero en este ejemplo, nosotros estaremos ocupando la primera debido a que es el que tenemos como resultado del MLE.
+
+** Aproxima el error estándar de la estimación usando __bootstrap paramétrico__ y realiza un histograma de las replicaciones bootstrap.**
+
+Para el aproximar el error estándar usando boostrap paramétrico hacemos uso de las funciones generadas en clase (con sus respectivas modificaciones)
+
+```{r 2_1_4}
+# simular_modelo encuentra n número de observaciones de una distribución normal con la media y sigma proporcionada
+simular_modelo <- function(n, media, sigma){
+  rnorm(n, media, sigma)
+}
+```
+
+
+```{r 2_1_5}
+# la función rep_boot repite 
+rep_boot <- function(rep, crear_log_p, est_mle, n){
+  muestra_bootstrap <- 
+    simular_modelo(
+      n = length(muestra), 
+      media = est_mle["media", "estimador"], 
+      sigma = est_mle["sigma", "estimador"]
+      )
+  
+  log_p_boot <- crear_log_p(muestra_bootstrap)
+  
+  # optimizamos
+  
+  res_boot <- 
+    optim(
+      par = c(0, 0.5), 
+      fn = log_p_boot, 
+      control = list(fnscale = -1, maxit = 1000), 
+      method = "Nelder-Mead"
+      )
+  
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c("media", "sigma"), estimador_boot = res_boot$par) 
+}
+```
+
+Ahora hay que hacer las replicas bootstrap. Generamos 10,000 replicas bootstrap para tener obtener la distribución.
+
+```{r 2_1_6}
+reps_boot <- purrr::map_dfr(
+  .x = 1:5000, 
+  .f = ~ rep_boot(.x, crear_log_p, est_mle, n = length(muestra)), 
+  rep = ".id"
+  ) 
+
+reps_boot %>% nrow()
+```
+
+```{r 2_1_7}
+error_est <- 
+  reps_boot %>% 
+  group_by(parametro) %>% 
+  summarise(ee_boot = sd(estimador_boot)) 
+
+bind_cols(est_mle, error_est) %>% 
+  mutate(across(where(is.numeric), round, 3)) %>% 
+  dplyr::select(parametro, estimador, ee_boot)
+```
+
+Mostrando el histograma tanto de sigma como de la media:
+
+```{r 2_1_8}
+reps_boot %>% 
+  ggplot2::ggplot(aes(x = estimador_boot)) +
+  geom_histogram(aes(fill = parametro), alpha = .8)+
+  facet_wrap(~parametro, scales = "free")+
+  theme_minimal()+
+  labs(
+    title = "Histograma de mu y sigma",
+    subtitle = "La gráfica muestra la distibución de las replicaciones con bootstrap paramétrico",
+    caption = "Se toman en cuenta 10,000 replicaciones bootstrap",
+    y = "Número de replicaciones",
+    x = "Valor del estimador boostrap",
+    fill = "Parámetro"
+      )+
+  theme(legend.position = "bottom")+
+  scale_fill_manual(values = c("gray40", "dodgerblue4"))
+```
+
+* Aproxima el error estándar de la estimación usando __bootstrap paramétrico__ y 
+realiza un histograma de las replicaciones bootstrap.
+
+**2.2 Análisis bayesiano**
+
+* Continuamos con el problema de hacer inferencia de $\sigma^2$. Comienza 
+especificando una inicial Gamma Inversa, justifica tu elección de los parámetros 
+de la distribución inicial y grafica la función de densidad.
+
+**Respuesta:**
+
+* 2.2.1 Comienza especificando una inicial Gamma Inversa, justifica tu elección de los parámetros de la distribución inicial y grafica la función de densidad.
+
+La distribución de la pregunta, es adaptable al modelo de Gamma-Inverso $$X_i\sim \mathsf{N}(\mu, \sigma)$$ donde Queremos estimar μ y σ. 
+
+Previo a iniciar el análisis Bayesiano, al igual que en el inciso anterior, observamos los datos de x de forma que tengamos noción del tipo de datos que vamos a describir y que variables queremos estimar.
+Se observa que los datos están, en efecto, distribuidos de una forma similar a una normal.
+
+```{r 2_2_1, include=TRUE}
+data(x)
+sd(x)
+Hmisc::describe(x)
+x %>% 
+  data.frame() %>% 
+  set_names("x") %>% 
+  ggplot()+
+  geom_histogram(aes(x = x), fill = "dodgerblue4", alpha = .8)+
+  theme_minimal() +
+  labs(x = "Valor de la variable x", 
+       y = "Conteo de la variable", 
+       title = "Histograma de la variable x")+
+  theme(legend.position = "bottom")
+```
+
+**Cálculo de Iniciales**
+
+De la misma forma que en los ejemplos de clase, comenzamos con $\sigma^2$ y efectuamos una simulación para verificar nuestra inicial.
+
+```{r 2_2_2, include=TRUE}
+# Inferimos un valor de la desviación estándar basado en la observación realizada
+sigma_0 <- 10
+# seleccionamos valor que genere una dispersión adecuada
+a <- 5
+b <- a * sigma_0^2
+c(a = a, b = b)
+
+#Se simula y calculan cuartiles:
+
+tau <- rgamma(1000, a, b)
+quantile(tau, c(0.05, 0.95))
+```
+
+Utilizando la información del problema definimos el rango en el que con alta probabilidad se encuentra la media poblacional y ajustamos n_0:
+
+```{r 2_2_3, include=TRUE}
+mu_0 <- 0 #distribución con media cero
+n_0 <- 3.5 # ajustamos concentración en la inicial después de algunas simulaciones
+tau <- rgamma(1000, a,b)
+sigma <- 1/sqrt(tau)
+mu <- map_dbl(sigma, ~ rnorm(1, mu_0, .x / sqrt(n_0)))
+quantile(mu, c(0.05, 0.5, 0.95))
+
+```
+
+Simulamos una normal inversa utilizando la función de las notas y plasmamos líneas de referencia de -10 y 10:
+
+```{r 2_2_4, include=TRUE}
+simular_normal_invgamma <- function(n, pars){
+  mu_0 <- pars[1]
+  n_0 <- pars[2]
+  a <- pars[3]
+  b <- pars[4]
+  # simular media
+  tau <- rgamma(1, a, b)
+  sigma <- 1 / sqrt(tau)
+  mu <- rnorm(1, mu_0, sigma/sqrt(n_0))
+  # simular sigma
+  rnorm(n, mu, sigma)
+}
+
+set.seed(2021)
+sims_tbl <- tibble(rep = 1:20) %>%
+  mutate(valor_x = map(rep, ~ simular_normal_invgamma(1000, c(mu_0, n_0, a, b)))) %>%
+  unnest(cols = c(valor_x))
+ggplot(sims_tbl, aes(x = valor_x)) + geom_histogram() +
+  facet_wrap(~ rep) +
+  geom_vline(xintercept = c(-10, 10), colour = "darkorange3")+
+  theme_minimal()+
+  labs(title = "Simulaciones de la distribución Normal-Invgamma",
+       subtitle = "Se muestran 20 veces simulaciones de tamaño 1000",
+       x = "",
+       y = "Conteo")
+```
+
+Observamos simulaciones mayoritariamente adecuadas conforme al espacio de posibilidades.
+
+**Cálculo de Posteriores**
+
+* 2.2.2 Calcula analíticamente la distribución posterior.
+
+Basado en Gamma Inversa y conforme a la pregunta la posterior es
+
+$\tau|x$ es representado por $\mathsf{Gamma}(\alpha', \beta')$ donde $\alpha' = \alpha + n/2$ y
+$$\beta' = \beta + \frac{1}{2}\sum_{i=1}^{n}(x_{i} - \bar{x})^2 + \frac{nn_0}{n+n_0}\frac{({\bar{x}}-\mu_{0})^2}{2}$$
+
+De la misma forma para $\mu|\sigma$,x es normal con media $\mu' = \frac{n_0\mu_{0}+n{\bar{x}}}{n_0 +n}$ y varianza $\sigma^2/({n_0 +n})$ resultando lo anterior en:
+$$p(\mu,\sigma|x) = p(\mu|x,\sigma)p(\sigma|x)$$
+
+Dicho lo anterior, generamos la función posterior, aplicada a los datos de x:
+
+```{r 2_2_45, include=TRUE}
+calcular_pars_posterior <- function(x, pars_inicial){
+  # iniciales
+  mu_0 <- pars_inicial[1]
+  n_0 <- pars_inicial[2]
+  a_0 <- pars_inicial[3]
+  b_0 <- pars_inicial[4]
+  # muestra
+  n <- length(x)
+  media <- mean(x)
+  S2 <- sum((x - media)^2)
+  # sigma post
+  a_1 <- a_0 + 0.5 * n
+  b_1 <- b_0 + 0.5 * S2 + 0.5 * (n * n_0) / (n + n_0) * (media - mu_0)^2
+  # posterior mu
+  mu_1 <- (n_0 * mu_0 + n * media) / (n + n_0)
+  n_1 <- n + n_0
+  c(mu_1, n_1, a_1, b_1)
+}
+pars_posterior <- calcular_pars_posterior(x, c(mu_0, n_0, a, b))
+pars_posterior
+```
+
+Y comprobamos consistencia entre la posterior y la inicial:
+
+```{r 2_2_48, include=TRUE}
+sim_params <- function(m, pars){
+  mu_0 <- pars[1]
+  n_0 <- pars[2]
+  a <- pars[3]
+  b <- pars[4]
+  # simular sigmas
+  sims <- tibble(tau = rgamma(m, a, b)) %>%
+    mutate(sigma = 1 / sqrt(tau))
+  # simular mu
+  sims <- sims %>% mutate(mu = rnorm(m, mu_0, sigma / sqrt(n_0)))
+  sims
+}
+sims_inicial <- sim_params(5000, c(mu_0, n_0, a, b)) %>%
+  mutate(dist = "inicial")
+sims_posterior <- sim_params(5000, pars_posterior) %>%
+  mutate(dist = "posterior")
+sims <- bind_rows(sims_inicial, sims_posterior)
+ggplot(sims, aes(x = mu, y = sigma, colour = dist)) +
+  geom_point()+
+  theme_minimal()+
+  theme(legend.position = "bottom")+
+  labs(y = "Sigma", 
+        x = "Mu",
+        title = "Scatterplot de mu y sigma",
+       subtitle = "En la gráfica se muestra los datos de la Inicial y Posterior",
+       color = "Distribución"
+       )+
+  scale_color_manual(values = c("gray40", "dodgerblue4"))
+```
+
+
+Se observa que la posterior es consistente con la información inicial.
+
+
+2.2.3 Realiza un histograma de simulaciones de la distribución posterior y calcula
+el error estándar de la distribución.
+
+```{r 2_2_5, include=TRUE}
+sims_posterior %>% 
+  gather(variable, valor, tau:mu) %>% 
+  filter(variable != "tau") %>% 
+  ggplot(aes(x = valor))+
+  geom_histogram(aes(fill = variable), alpha = 0.8)+
+  facet_wrap(~variable, scales = "free")+
+  theme_minimal()+
+  theme(legend.position = "bottom")+
+  scale_fill_manual(values = c("gray40", "dodgerblue4"))+
+   labs(
+    title = "Histograma de mu y sigma",
+    subtitle = "La gráfica muestra la distibución de las simulaciones bayesianas",
+    caption = "Se toman en cuenta 5000 simulaciones",
+    y = "Número de simulaciones",
+    x = "Valor del estimador",
+    fill = "Parámetro"
+      )
+```
+
+Simulamos muestras tamaño 10 y calculamos medias posteriores:
+```{r 2_2_6, include=TRUE}
+
+#Convertimos los datos x a dataFrame para facilidad de manipulación con dplyr
+set_x <- as.data.frame(x)
+
+simular_muestra <- function(rep, mu_0, n_0, a_0, b_0){
+  muestra_set_x<- set_x %>% 
+    sample_n(10, replace = FALSE)
+  pars_posterior <- calcular_pars_posterior(muestra_set_x$x,
+                                            c(mu_0, n_0, a_0, b_0))
+  
+  medias_post <- 
+    sim_params(1000, pars_posterior) %>% 
+    summarise(across(everything(), mean)) %>% 
+    dplyr::select(mu, sigma)
+  media <- mean(muestra_set_x$x)
+  est_mv <- c("mu" = media,
+              "sigma" = sqrt(mean((muestra_set_x$x - media)^2)))
+  bind_rows(medias_post, est_mv) %>% 
+    mutate(rep = rep, tipo = c("media_post", "max_verosim")) %>% 
+    pivot_longer(mu:sigma, names_to = "parametro", values_to = "estimador")
+}
+
+#Obtenemos Mu y Sigma de la población de los datos x
+poblacion <- set_x %>% 
+  summarise(mu = mean(set_x$x), sigma = sd(set_x$x)) %>% 
+  pivot_longer(mu:sigma, names_to = "parametro", values_to = "valor_pob")
+
+#Calculamos y Graficamos los errores
+errores <- map(1:5000, ~ simular_muestra(.x, mu_0, n_0, a, b)) %>%
+  bind_rows() %>% left_join(poblacion) %>% 
+  mutate(error = (estimador - valor_pob))
+ggplot(errores, aes(x = error, fill = tipo)) +
+  geom_histogram(bins = 20, position = "identity", alpha = 0.5) + 
+  facet_wrap(~parametro)+
+  theme_minimal()+
+  theme(legend.position = "bottom")+
+  labs(
+    title = "Diferencias respecto al parámetro poblacional",
+    subtitle = "Se muestran las 5000 simulaciones",
+    x = "Valor",
+    y = "Conteo",
+    fill = "Distribución"
+  )+
+  scale_fill_manual(values = c("gray40", "dodgerblue4"))
+
+```
+
+Imprimimos los errores:
+
+```{r 2_2_7, include=TRUE}
+errores %>% 
+  group_by(tipo, parametro) %>% 
+  summarise(recm = sqrt(mean(error^2)) %>% round(2)) %>% 
+  arrange(parametro)
+```
+
+La estimación de la desviación estándar del modelo es superior a la de máxima verosimilitud.
+Tomando como base el error cuadrático medio, se muestra que los estimadores de la media superior son mejores.
+
+
+* 2.2.4 ¿Cómo se comparan tus resultados con los de bootstrap paramétrico?
+
+Los resultados de la media y sigma en bootstrap paramétrico comparados con las distribuciones posteriores del análisis son bastante similares en forma, escala y uniformidad de los datos.
+
+**2.3 Supongamos que ahora buscamos hacer inferencia del parámetro**
+$\tau=log(\sigma)$, ¿cuál es el estimador de máxima verosimilitud?
+
+* Utiliza bootstrap paramétrico para generar un intervalo de confianza del 95%
+para el parámetro $\tau$ y realiza un histograma de las replicaciones 
+bootstrap.
+
+**Respuesta:**
+
+Al calcular analíticamente la función de log verosimilitud se considera la likelihood y prior de las funciones. De esta forma:
+
+La normal sigue la siguiente distribución con su respectiva likelihood:
+$$
+f(x) = \frac{1}{\sqrt{2\pi \sigma^2}} \exp\Bigg(\frac{1}{2\sigma^2}(x -\mu)^2\Bigg) \\
+L(x) = \frac{1}{ ( 2\pi \sigma^2)^{n/2}} \exp(\frac{1}{2\sigma^2}\sum_i(x_i -\mu)^2)
+$$
+
+De manera que, dada una muestra $x_1, x_2, x_3, ..., x_n$, y substituyendo $a = log(\sigma)$ de tal forma que $\sigma^2 = e^{2a}$ tenemos que la log likelihood la podemos expresar de la siguiente manera:
+$$
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(e^{2log \sigma}) - \frac{1}{2 e^{2 log \sigma}}\sum_i (x_i-\mu)^2 \\
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(e^{2a}) - \frac{1}{2e^{2a}}\sum_i (x_i-\mu)^2 
+$$
+Al derivar parcialmente con respecto $a$ e igualando a 0, obtenemos la siguiente expresión:
+$$
+\frac{\partial l(x)}{\partial a} = - \frac{n 2 e^{2a}}{2 e^{2a}} - \Bigg[ \frac{1}{2}\sum_i (x_i-\mu)^2 \Bigg]\Bigg[ -\frac{2}{e^{2a}}  \Bigg] \\
+= -n + \Bigg[ \frac{1}{e^{2a}}\sum_i (x_i-\mu)^2 \Bigg] \\
+\Rightarrow \Bigg[ \frac{1}{e^{2a}}\sum_i (x_i-\mu)^2 \Bigg] = n\\
+\Rightarrow \frac{\sum_i (x_i-\mu)^2}{{n}} = e^{2a}\\
+\Rightarrow \frac{\sum_i (x_i-\mu)^2}{{n}} = e^{2a}\\
+\Rightarrow a = \log{\sqrt{\frac{\sum_i (x_i-\mu)^2}{n}}}\\
+$$
+Como $a = log(\sigma)$, entonces tenemos que $\hat{log(\sigma)} = \log{\sqrt{\frac{\sum_i (x_i-\mu)^2}{n}}}$   siendo el último el estimador MLE.
+
+Este resultado es congruente con la propiedad de los MLE vista en clase, en particular el teorema de equivarianza de los MLE:
+
+Sea $\tau = g(\theta)$ una función de $\theta$ bien comportada. Entonces si $\hat{\theta_n}$ es el MLE de $\theta$, entonces $\hat{\tau_n} = g(\hat{\theta_n})$ es el MLE de $\tau$, ya que aplicando directamente el teorema obtenemos el mismo resultado.
+
+
+Para encontrarla con la función *optim* como vimos en clase, en lugar de analíticamente, hacemos uso de la funcion crear_log_p. Esta funcion nos ayuda a generar las funciones log_p. 
+
+```{r 2_3_1}
+# La función crear_log_p crea una funcion llamada log_p que recibe dos parámetros (media, sigma) tal que se estandariza la funcion y se calcula su respectiva log verosimilitud
+crear_log_p <- function(x){
+  log_p <- function(pars){
+    media = pars[1]
+    log_sigma = pars[2]
+    z <- (x - media) / exp(log_sigma)
+    log_verosim <- -(log_sigma +  0.5 * mean(z^2))
+    log_verosim
+  }  
+  log_p
+}
+```
+
+Con esto procedemos a cargar los datos y optimizarlo con la función optim:
+
+```{r 2_3_2}
+load("data/x.RData")
+muestra <- x
+
+log_p <- crear_log_p(muestra)
+
+res <- 
+  optim(
+    par = c(0, 0.5),
+    fn = log_p, 
+    control = list(fnscale = -1, maxit = 10000), 
+    method = "Nelder-Mead"
+    )
+
+est_mle <- 
+  tibble(
+    parametro = c("media", "log-sigma"), 
+    estimador = res$par
+    )
+
+est_mle
+```
+al compararlo con el resultado anterior (es decir, el de sigma sin la transformación) tenemos que es equivalente a aplicar el logaritmo a $\sigma$. Para el aproximar el error estándar usando boostrap paramétrico hacemos uso de las funciones generadas en clase (con sus respectivas modificaciones)
+
+```{r 2_3_3}
+# simular_modelo encuentra n número de observaciones de una distribución normal con la media y sigma proporcionada
+simular_modelo <- function(n, media, log_sigma){
+  rnorm(n, media, exp(log_sigma))
+}
+```
+
+
+```{r 2_3_4}
+# la función rep_boot repite 
+rep_boot <- function(rep, crear_log_p, est_mle, n){
+  muestra_bootstrap <- 
+    simular_modelo(
+      n = length(muestra), 
+      media = est_mle["media", "estimador"], 
+      log_sigma = est_mle["log-sigma", "estimador"]
+      )
+  
+  log_p_boot <- crear_log_p(muestra_bootstrap)
+  
+  # optimizamos
+  
+  res_boot <- 
+    optim(
+      par = c(0, 0.5), 
+      fn = log_p_boot, 
+      control = list(fnscale = -1, maxit = 1000), 
+      method = "Nelder-Mead"
+      )
+  
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c("media", "log-sigma"), estimador_boot = res_boot$par) 
+}
+```
+
+Ahora hay que hacer las replicas bootstrap. Generamos 10,000 replicas bootstrap para tener obtener la distribución.
+
+```{r 2_3_5}
+est_mle <- est_mle %>% 
+  column_to_rownames("parametro")
+
+reps_boot <- map_dfr(
+  .x = 1:5000, 
+  .f = ~ rep_boot(.x, crear_log_p, est_mle, n = length(muestra)), 
+  rep = ".id"
+  ) 
+
+reps_boot %>% nrow()
+```
+
+```{r 2_3_6}
+error_est <- 
+  reps_boot %>% 
+  group_by(parametro) %>% 
+  summarise(ee_boot = sd(estimador_boot)) 
+
+bind_cols(est_mle, error_est) %>% 
+  mutate(across(where(is.numeric), round, 3)) %>% 
+  dplyr::select(parametro, estimador, ee_boot)
+```
+
+Mostrando el histograma tanto de sigma como de la media:
+
+```{r 2_3_7}
+reps_boot %>% 
+  ggplot(aes(x = estimador_boot)) +
+  geom_histogram(aes(fill = parametro), alpha = 0.8) +
+  facet_wrap(~parametro, scales = "free")+
+  theme_minimal()+
+  theme(legend.position = "bottom")+
+  labs(
+    title = "Distribuciones de mu y log(sigma)",
+    subtitle = "Se muestran las 5000 simulaciones",
+    x = "Valor",
+    y = "Conteo",
+    fill = "Parámetro"
+  )+
+  scale_fill_manual(values = c("gray40", "dodgerblue4"))
+```
+
+### 3. Bayesiana y regularización
+
+Lee el ejempo *2.7 Informative prior distribution for cancer rates* del libro
+[Bayesian Data Analysis](http://www.stat.columbia.edu/~gelman/book/BDA3.pdf) (página 46).
+
+En el siguiente ejercicio harás algo similar al ejemplo anterior, en este caso 
+con el modelo Beta-Binomial.
+
+Los datos *pew_research_center_june_elect_wknd_data.dta* tienen información de 
+ecnuestas realizadas durante la campaña presidencial 2008 de EUA.
+
+**Respuesta:**
+
+```{r 3_1}
+# leer los datos, utilizar el codigo zip para obtener los estados. Drop de las
+# columnas que no vamos a ocupar
+original_data <- foreign::read.dta('./data/pew_research_center_june_elect_wknd_data.dta') %>% 
+  dplyr::select(c("ideo", "zipcode"))
+
+# obtener estados y código FIPS para usar en plot_usmap
+mydata <- merge(x = original_data, y = zipcode, by.x = "zipcode", by.y = "zip", all.x = T)
+mydata$fips <- usmap::fips(mydata$state) 
+
+# filtrar sin Alaska, Hawai, DC, y las fuerzas del pacífico y europa (AP y AE)
+mydata <- mydata %>% filter(state != "AK" & state != "HI" & state != "DC" & state != "AE" & state != "AP")
+
+glimpse(mydata)
+```
+
+Tenemos distintas categorías para la clase `ideología`. En particular, estamos interesados en aquellos que se consideran "very liberal".
+
+```{r 3_2}
+table(mydata$ideo)
+```
+
+* Estima el porcentaje de la población de cada estado (excluyendo Alaska, Hawai, 
+y DC)  que se considera *very liberal*, utilizando el estimador de máxima 
+verosimilitud.
+
+```{r 3_3}
+# agrupamos población encuestada por estado
+poll_nj <- mydata %>% group_by(state, fips) %>% 
+  summarise(pob = n())
+
+# agrupamos población very liberal por estado
+poll_ideo_nj <- mydata %>% 
+  group_by(state, ideo) %>% 
+  summarise(success = n()) %>% 
+  filter(ideo == "very liberal")
+
+# mezclamos las tablas y sacar MLE por estado
+state_poll_gral <- left_join(x=poll_nj, y=poll_ideo_nj) %>% dplyr::select(-c("ideo"))
+state_poll_gral[is.na(state_poll_gral)] <- 0
+state_poll_gral <- state_poll_gral %>% mutate(p_mle = success/pob)
+state_poll_gral
+```
+
+- Grafica en el eje *x* el número de encuestas para cada estado y en el eje *y* 
+  la estimación de máxima verosimilitud. ¿Qué observas?
+  
+```{r 3_4}
+ggplot(data = state_poll_gral, aes(x = pob, y = p_mle)) +
+  geom_point(color = "steelblue4") +
+  #theme(legend.position = "none") +
+  geom_smooth(color= "red") +
+  xlab("Población") +
+  ylab("Proporción muy liberal") +
+  labs(title = "%Ideología muy liberal por población", subtitle = "La población refiere al número de encuestados por estado") +
+  theme_minimal()
+```
+
+Observamos que los estados donde la proporción de ideología muy liberal es alta parecen tener
+tanto población chica como grande. Lo anterior se puede apreciar un poco en el siguiente mapa donde vemos que estados chicos como `Vermont`, `South Dakota`, `Rhode Island`, y estados grandes como `California`, `New York`, `Illinois` (en términos poblacionales) tienen proporción alta de esta ideología.
+
+```{r 3_5}
+# graficamos con mapa de EEUU la proporción de muy liberales
+states_us <- state_poll_gral %>% ungroup() %>% dplyr::select(fips, p_mle)
+usmap::plot_usmap(data=states_us, values = "p_mle", labels = T) +
+  scale_fill_continuous(name = "Proporción muy liberal", low = "white", high = "orange") +
+  #theme(legend.position = "right") +
+  labs(title = "%Ideología muy liberal por población", 
+       subtitle = "La población refiere al número de encuestados por estado")
+```
+
+
+  
+- Grafica en el eje *x* el porcentaje de votos que obtuvo Obama en la elección
+  para cada estado y en el eje *y* la estimación de máxima verosimilitud. ¿Qué observas? (usa los datos *2008ElectionResult.csv*)
+```{r 3_6}
+# Leer los datos y asignar FIPS
+elections2008 <- read.csv("./data/2008ElectionResult.csv") %>% 
+  filter(state != "Alaska" & state != "Hawaii" & state != "District of Columbia") %>% 
+  mutate(state_abb = state.abb[match(state, state.name)]) %>% 
+  dplyr::select(c("state_abb", "vote_Obama_pct")) 
+elections2008$fips <- usmap::fips(elections2008$state_abb)
+colnames(elections2008) <- c("state", "Obama_pct", "fips")
+
+# Combinamos con nuestra tabla
+elections2008 <- left_join(elections2008, state_poll_gral, copy = T)
+  
+ggplot(data = elections2008, aes(x = Obama_pct, y = p_mle)) +
+  geom_point(aes(size = pob), color = "steelblue4", alpha = 0.8) +
+  geom_smooth(color= "red") +
+  xlab("% voto para Obama") +
+  ylab("Proporción muy liberal") +
+  labs(title = "%Voto para Obama según la proporción de ideología muy liberal", subtitle = "La población refiere al número de encuestados por estado") +
+  theme_minimal()
+```
+
+Ahora vemos que el voto para Obama tuvo variaciones importantes, fue muy bajo y
+muy alto para estados que se consideraban "muy liberal". Esto debido a que la
+cantidad de encuestados por estado es muy diferente. De manera similar, los mismos estados que mencionamos previamente con población chica y grande fueron votantes de Obama.
+
+```{r 3_7}
+usmap::plot_usmap(data=elections2008, values = "Obama_pct", labels = T) +
+  scale_fill_continuous(name = "% voto Obama", low = "white", high = "orange") +
+  #theme(legend.position = "right") +
+  labs(title = "% voto para Obama por población", 
+       subtitle = "La población refiere al número de encuestados por estado")
+```
+
+* Estima el mismo porcentaje usando inferencia bayesiana, en particular
+la familia conjugada binomial-beta. Deberás estimar la proporción de manera 
+independiente para cada estado, sin embargo, utilizarás la misma inicial a lo
+largo de todos.
+
+- Para elegir los parámetros $\alpha$, $\beta$ de la incial considera la media
+  y varianza de la distribución predictiva posterior (que en este caso tiene
+  distribución [Beta-Binomial](https://en.wikipedia.org/wiki/Beta-binomial_distribution)) y empata la    media y varianza observadas a sus valores observados para después depejar $\alpha$ y $\beta$ (puedes   usar [Wolframalpha](https://www.wolframalpha.com/) para resolver).  
+
+De la distribución Beta sabemos que:
+
+$$
+E(X) = \frac{\alpha}{\alpha + \beta }
+$$
+
+$$
+V(X) = \frac{\alpha \beta}{(\alpha + \beta)^2 + (\alpha + \beta + 1)}
+$$
+
+*Nota: Lo correcto sería calcular $E[\frac{X_j}{n_j}]$ y $V[\frac{X_j}{n_j}]$
+
+```{r}
+# Empatar primer y segundo momento de la Beta con la media y varianza
+# observada en los datos para calcular alfa y beta
+mu_obs <- mean(state_poll_gral$p_mle)
+var_obs <- var(state_poll_gral$p_mle)
+tibble(mu_obs, var_obs)
+#n_full <- sum(state_poll_gral$pob)
+#n_very_liberal <- sum(state_poll_gral$success)
+#tibble(n_full, n_very_liberal, mu_obs, var_obs)
+
+# De wolfram-alpha, la prior para p_j ~ Beta(a,b) tiene parámetros
+alfa = 6
+beta = 129
+```
+
+
+- Utiliza la media posterior de cada estado como estimador puntual y repite las gráficas del inciso anterior.
+
+```{r}
+# Usamos la posterior para p_j|X ~ Beta(a + k_j, n_j - k_j + b) 
+# calculamos la media posterior de cada estado
+mu_posterior = function(nj, kj){
+  alfa = alfa + kj
+  beta = nj - kj + beta 
+  alfa/(alfa+beta)
+}
+pj_bayes <- mapply(FUN = mu_posterior, state_poll_gral$pob, state_poll_gral$success)
+
+# Agregamos la predicción a las tablas
+state_poll_gral$p_bayes <- pj_bayes
+elections2008$p_bayes <- pj_bayes
+```
+
+**Nota:** Este proceso para obtener los parámetros de la incial es razonable para este ejercicio, sin embargo, un modelo jerárquico sería la manera de formalizar este acercamiento y se estudiará en próximas materias.
+
+Repetimos las gráficas y observamos que la predicción de Bayes reduce ligeramente el efecto de que la proporción de ideología liberal sea alta para estados con población chica y grande. Es decir, observamos ligero acercamiento entre puntos. Similarmente, el % de voto para Obama parece indicar la forma de que entre más liberal, más voto se le otorga. No obstante, hay algunos estados con alta proporción liberal y poco voto para Obama. 
+
+```{r}
+# gráfica de proporciones
+ggplot(data = state_poll_gral, aes(x = pob, y = p_bayes)) +
+  geom_point(color = "darkcyan") +
+  #theme(legend.position = "none") +
+  geom_smooth(color= "red") +
+  xlab("Población") +
+  ylab("Proporción muy liberal") +
+  labs(title = "%Ideología muy liberal por población (predicción)", subtitle = "La población refiere al número de encuestados por estado") +
+  theme_minimal()
+```
+
+```{r}
+# gráfica porcentaje de voto
+ggplot(data = elections2008, aes(x = Obama_pct, y = p_bayes)) +
+  geom_point(aes(size = pob), color = "darkcyan", alpha = 0.8) +
+  geom_smooth(color = "red") +
+  xlab("% voto para Obama") +
+  ylab("Proporción muy liberal") +
+  labs(title = "%Voto para Obama según la proporción de ideología muy liberal (predicción)", subtitle = "La población refiere al número de encuestados por estado") +
+  theme_minimal()
+```

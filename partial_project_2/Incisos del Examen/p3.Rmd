@@ -1,0 +1,205 @@
+### 3. Bayesiana y regularización
+
+Lee el ejempo *2.7 Informative prior distribution for cancer rates* del libro
+[Bayesian Data Analysis](http://www.stat.columbia.edu/~gelman/book/BDA3.pdf) (página 46).
+
+En el siguiente ejercicio harás algo similar al ejemplo anterior, en este caso 
+con el modelo Beta-Binomial.
+
+Los datos *pew_research_center_june_elect_wknd_data.dta* tienen información de 
+encuestas realizadas durante la campaña presidencial 2008 de EUA.
+
+
+```{r}
+library(foreign)
+library(tidyverse)
+library(usmap)
+library(zipcode)
+data(zipcode)
+
+# leer los datos, utilizar el codigo zip para obtener los estados. Drop de las
+# columnas que no vamos a ocupar
+original_data <- read.dta('./data/pew_research_center_june_elect_wknd_data.dta') %>% 
+  select(c("ideo", "zipcode"))
+
+# obtener estados y código FIPS para usar en plot_usmap
+mydata <- merge(x = original_data, y = zipcode, by.x = "zipcode", by.y = "zip", all.x = T)
+mydata$fips <- fips(mydata$state) 
+
+# filtrar sin Alaska, Hawai, DC, y las fuerzas del pacífico y europa (AP y AE)
+mydata <- mydata %>% filter(state != "AK" & state != "HI" & state != "DC" & state != "AE" & state != "AP")
+
+glimpse(mydata)
+```
+
+Tenemos distintas categorías para la clase `ideología`. En particular, estamos interesados en aquellos que se consideran "very liberal".
+
+```{r}
+table(mydata$ideo)
+```
+
+* Estima el porcentaje de la población de cada estado (excluyendo Alaska, Hawai, 
+y DC)  que se considera *very liberal*, utilizando el estimador de máxima 
+verosimilitud.
+
+```{r}
+# agrupar población encuestada por estado
+poll_nj <- mydata %>% group_by(state, fips) %>% 
+  summarise(pob = n())
+
+# agrupar población very liberal por estado
+poll_ideo_nj <- mydata %>% 
+  group_by(state, ideo) %>% 
+  summarise(success = n()) %>% 
+  filter(ideo == "very liberal")
+
+# mezclar las tablas y sacar MLE por estado
+state_poll_gral <- left_join(x=poll_nj, y=poll_ideo_nj) %>% select(-c("ideo"))
+state_poll_gral[is.na(state_poll_gral)] <- 0
+state_poll_gral <- state_poll_gral %>% mutate(p_mle = success/pob)
+state_poll_gral
+```
+
+- Grafica en el eje *x* el número de encuestas para cada estado y en el eje *y* 
+  la estimación de máxima verosimilitud. ¿Qué observas?
+  
+```{r}
+ggplot(data = state_poll_gral, aes(x = pob, y = p_mle)) +
+  geom_point(color = "steelblue4") +
+  #theme(legend.position = "none") +
+  geom_smooth(color= "red") +
+  xlab("Población") +
+  ylab("Proporción muy liberal") +
+  labs(title = "%Ideología muy liberal por población", subtitle = "La población refiere al número de encuestados por estado") +
+  theme_minimal()
+```
+Observamos que los estados donde la proporción de ideología muy liberal es alta parecen tener
+tanto población chica como grande. Lo anterior se puede apreciar un poco en el siguiente mapa donde vemos que estados chicos como `Vermont`, `South Dakota`, `Rhode Island`, y estados grandes como `California`, `New York`, `Illinois` (en términos poblacionales) tienen proporción alta de esta ideología.
+
+```{r}
+# graficar con mapa de EEUU la proporción de muy liberales
+states_us <- state_poll_gral %>% ungroup() %>% select(fips, p_mle)
+plot_usmap(data=states_us, values = "p_mle", labels = T) +
+  scale_fill_continuous(name = "Proporción muy liberal", low = "white", high = "orange") +
+  #theme(legend.position = "right") +
+  labs(title = "%Ideología muy liberal por población", 
+       subtitle = "La población refiere al número de encuestados por estado")
+```
+
+
+  
+- Grafica en el eje *x* el porcentaje de votos que obtuvo Obama en la elección
+  para cada estado y en el eje *y* la estimación de máxima verosimilitud. ¿Qué observas? (usa los datos *2008ElectionResult.csv*)
+```{r}
+# Leer los datos y asignar FIPS
+elections2008 <- read.csv("./data/2008ElectionResult.csv") %>% 
+  filter(state != "Alaska" & state != "Hawaii" & state != "District of Columbia") %>% 
+  mutate(state_abb = state.abb[match(state, state.name)]) %>% 
+  select(c("state_abb", "vote_Obama_pct")) 
+elections2008$fips <- fips(elections2008$state_abb)
+colnames(elections2008) <- c("state", "Obama_pct", "fips")
+
+# Combinar con nuestra tabla
+elections2008 <- left_join(elections2008, state_poll_gral, copy = T)
+  
+ggplot(data = elections2008, aes(x = Obama_pct, y = p_mle)) +
+  geom_point(aes(size = pob), color = "steelblue4", alpha = 0.8) +
+  geom_smooth(color= "red") +
+  xlab("% voto para Obama") +
+  ylab("Proporción muy liberal") +
+  labs(title = "%Voto para Obama según la proporción de ideología muy liberal", subtitle = "La población refiere al número de encuestados por estado") +
+  theme_minimal()
+```
+Ahora vemos que el voto para Obama tuvo variaciones importantes, fue muy bajo y
+muy alto para estados que se consideraban "muy liberal". Esto debido a que la
+cantidad de encuestados por estado es muy diferente. De manera similar, los mismos estados que mencionamos previamente con población chica y grande fueron votantes de Obama.
+
+```{r}
+plot_usmap(data=elections2008, values = "Obama_pct", labels = T) +
+  scale_fill_continuous(name = "% voto Obama", low = "white", high = "orange") +
+  #theme(legend.position = "right") +
+  labs(title = "% voto para Obama por población", 
+       subtitle = "La población refiere al número de encuestados por estado")
+```
+
+* Estima el mismo porcentaje usando inferencia bayesiana, en particular
+la familia conjugada binomial-beta. Deberás estimar la proporción de manera 
+independiente para cada estado, sin embargo, utilizarás la misma inicial a lo
+largo de todos.
+
+- Para elegir los parámetros $\alpha$, $\beta$ de la incial considera la media
+  y varianza de la distribución predictiva posterior (que en este caso tiene
+  distribución [Beta-Binomial](https://en.wikipedia.org/wiki/Beta-binomial_distribution)) y empata la    media y varianza observadas a sus valores observados para después depejar $\alpha$ y $\beta$ (puedes   usar [Wolframalpha](https://www.wolframalpha.com/) para resolver).  
+
+De la distribución Beta sabemos que:
+
+$$
+E(X) = \frac{\alpha}{\alpha + \beta }
+$$
+
+$$
+V(X) = \frac{\alpha \beta}{(\alpha + \beta)^2 + (\alpha + \beta + 1)}
+$$
+
+*Nota: Lo correcto sería calcular $E[\frac{X_j}{n_j}]$ y $V[\frac{X_j}{n_j}]$
+
+```{r}
+# Empatar primer y segundo momento de la Beta con la media y varianza
+# observada en los datos para calcular alfa y beta
+mu_obs <- mean(state_poll_gral$p_mle)
+var_obs <- var(state_poll_gral$p_mle)
+tibble(mu_obs, var_obs)
+#n_full <- sum(state_poll_gral$pob)
+#n_very_liberal <- sum(state_poll_gral$success)
+#tibble(n_full, n_very_liberal, mu_obs, var_obs)
+
+# De wolfram-alpha, la prior para p_j ~ Beta(a,b) tiene parámetros
+alfa = 6
+beta = 129
+```
+
+
+- Utiliza la media posterior de cada estado como estimador puntual y repite las gráficas del inciso anterior.
+
+```{r}
+# Usar la posterior para p_j|X ~ Beta(a + k_j, n_j - k_j + b) 
+# calcular la media posterior de cada estado
+mu_posterior = function(nj, kj){
+  alfa = alfa + kj
+  beta = nj - kj + beta 
+  alfa/(alfa+beta)
+}
+pj_bayes <- mapply(FUN = mu_posterior, state_poll_gral$pob, state_poll_gral$success)
+
+# Agregar la predicción a las tablas
+state_poll_gral$p_bayes <- pj_bayes
+elections2008$p_bayes <- pj_bayes
+```
+
+**Nota:** Este proceso para obtener los parámetros de la incial es razonable para este ejercicio, sin embargo, un modelo jerárquico sería la manera de formalizar este acercamiento y se estudiará en próximas materias.
+
+Repetimos las gráficas y observamos que la predicción de Bayes reduce ligeramente el efecto de que la proporción de ideología liberal sea alta para estados con población chica y grande. Es decir, observamos ligero acercamiento entre puntos. Similarmente, el % de voto para Obama parece indicar la forma de que entre más liberal, más voto se le otorga. No obstante, hay algunos estados con alta proporción liberal y poco voto para Obama. 
+
+```{r}
+# gráfica de proporciones
+ggplot(data = state_poll_gral, aes(x = pob, y = p_bayes)) +
+  geom_point(color = "darkcyan") +
+  #theme(legend.position = "none") +
+  geom_smooth(color= "red") +
+  xlab("Población") +
+  ylab("Proporción muy liberal") +
+  labs(title = "%Ideología muy liberal por población (predicción)", subtitle = "La población refiere al número de encuestados por estado") +
+  theme_minimal()
+```
+
+```{r}
+# gráfica porcentaje de voto
+ggplot(data = elections2008, aes(x = Obama_pct, y = p_bayes)) +
+  geom_point(aes(size = pob), color = "darkcyan", alpha = 0.8) +
+  geom_smooth(color = "red") +
+  xlab("% voto para Obama") +
+  ylab("Proporción muy liberal") +
+  labs(title = "%Voto para Obama según la proporción de ideología muy liberal (predicción)", subtitle = "La población refiere al número de encuestados por estado") +
+  theme_minimal()
+```
+

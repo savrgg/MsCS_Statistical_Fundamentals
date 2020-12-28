@@ -1,0 +1,151 @@
+# 2.3 Transformación del parámetro
+
+Supongamos que ahora buscamos hacer inferencia del parámetro $\tau=log(\sigma)$, ¿cuál es el estimador de máxima verosimilitud?
+
+* Utiliza bootstrap paramétrico para generar un intervalo de confianza del 95\% para el parámetro $\tau$ y realiza un histograma de las replicaciones bootstrap.
+
+Al calcular analíticamente la función de log verosimilitud se considera la likelihood y prior de las funciones. De esta forma:
+
+La normal sigue la siguiente distribución con su respectiva likelihood:
+$$
+f(x) = \frac{1}{\sqrt{2\pi \sigma^2}} \exp\Bigg(\frac{1}{2\sigma^2}(x -\mu)^2\Bigg) \\
+L(x) = \frac{1}{ ( 2\pi \sigma^2)^{n/2}} \exp(\frac{1}{2\sigma^2}\sum_i(x_i -\mu)^2)
+$$
+
+De manera que, dada una muestra $x_1, x_2, x_3, ..., x_n$, y substituyendo $a = log(\sigma)$ de tal forma que $\sigma^2 = e^{2a}$ tenemos que la log likelihood la podemos expresar de la siguiente manera:
+$$
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(e^{2log \sigma}) - \frac{1}{2 e^{2 log \sigma}}\sum_i (x_i-\mu)^2 \\
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(e^{2a}) - \frac{1}{2e^{2a}}\sum_i (x_i-\mu)^2 
+$$
+Al derivarparcialmente con respecto $a$ e igualando a 0, obtenemos la siguiente expresión:
+$$
+\frac{\partial l(x)}{\partial a} = - \frac{n 2 e^{2a}}{2 e^{2a}} - \Bigg[ \frac{1}{2}\sum_i (x_i-\mu)^2 \Bigg]\Bigg[ -\frac{2}{e^{2a}}  \Bigg] \\
+= -n + \Bigg[ \frac{1}{e^{2a}}\sum_i (x_i-\mu)^2 \Bigg] \\
+\Rightarrow \Bigg[ \frac{1}{e^{2a}}\sum_i (x_i-\mu)^2 \Bigg] = n\\
+\Rightarrow \frac{\sum_i (x_i-\mu)^2}{{n}} = e^{2a}\\
+\Rightarrow \frac{\sum_i (x_i-\mu)^2}{{n}} = e^{2a}\\
+\Rightarrow a = \log{\sqrt{\frac{\sum_i (x_i-\mu)^2}{n}}}\\
+$$
+Como $a = log(\sigma)$, entonces tenemos que $\hat{log(\sigma)} = \log{\sqrt{\frac{\sum_i (x_i-\mu)^2}{n}}}$   siendo el último el estimador MLE.
+
+Este resultado es congruente con la propiedad de los MLE vista en clase, en particular el teorema de equivarianza de los MLE:
+
+Sea $\tau = g(\theta)$ una función de $\theta$ bien comportada. Entonces si $\hat{\theta_n}$ es el MLE de $\theta$, entonces $\hat{\tau_n} = g(\hat{\theta_n})$ es el MLE de $\tau$, ya que aplicando directamente el teorema obtenemos el mismo resultado.
+
+
+Para encontrarla con la función *optim* como vimos en clase, en lugar de analíticamente, hacemos uso de la funcion crear_log_p. Esta funcion nos ayuda a generar las funciones log_p. 
+
+```{r}
+library(tidyverse)
+# La función crear_log_p crea una funcion llamada log_p que recibe dos parámetros (media, sigma) tal que se estandariza la funcion y se calcula su respectiva log verosimilitud
+crear_log_p <- function(x){
+  log_p <- function(pars){
+    media = pars[1]
+    log_sigma = pars[2]
+    z <- (x - media) / exp(log_sigma)
+    log_verosim <- -(log_sigma +  0.5 * mean(z^2))
+    log_verosim
+  }  
+  log_p
+}
+```
+
+Con esto procedemos a cargar los datos y optimizarlo con la función optim:
+
+```{r}
+load("data/x.RData")
+muestra <- x
+
+log_p <- crear_log_p(muestra)
+
+res <- 
+  optim(
+    par = c(0, 0.5),
+    fn = log_p, 
+    control = list(fnscale = -1, maxit = 10000), 
+    method = "Nelder-Mead"
+    )
+
+est_mle <- 
+  tibble(
+    parametro = c("media", "log-sigma"), 
+    estimador = res$par
+    ) %>% 
+  column_to_rownames(var = "parametro")
+
+est_mle
+```
+al compararlo con el resultado anterior (es decir, el de sigma sin la transformación) tenemos que es equivalente a aplicar el logaritmo a $\sigma$. Para el aproximar el error estándar usando boostrap paramétrico hacemos uso de las funciones generadas en clase (con sus respectivas modificaciones)
+
+```{r}
+# simular_modelo encuentra n número de observaciones de una distribución normal con la media y sigma proporcionada
+simular_modelo <- function(n, media, log_sigma){
+  rnorm(n, media, exp(log_sigma))
+}
+```
+
+
+```{r}
+# la función rep_boot repite 
+rep_boot <- function(rep, crear_log_p, est_mle, n){
+  muestra_bootstrap <- 
+    simular_modelo(
+      n = length(muestra), 
+      media = est_mle["media", "estimador"], 
+      log_sigma = est_mle["log-sigma", "estimador"]
+      )
+  
+  log_p_boot <- crear_log_p(muestra_bootstrap)
+  
+  # optimizamos
+  
+  res_boot <- 
+    optim(
+      par = c(0, 0.5), 
+      fn = log_p_boot, 
+      control = list(fnscale = -1, maxit = 1000), 
+      method = "Nelder-Mead"
+      )
+  
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c("media", "log-sigma"), estimador_boot = res_boot$par) 
+}
+```
+
+Ahora hay que hacer las replicas bootstrap. Generamos 10,000 replicas bootstrap para tener obtener la distribución.
+
+```{r}
+reps_boot <- map_dfr(
+  .x = 1:5000, 
+  .f = ~ rep_boot(.x, crear_log_p, est_mle, n = length(muestra)), 
+  rep = ".id"
+  ) 
+
+reps_boot %>% nrow()
+```
+
+```{r}
+error_est <- 
+  reps_boot %>% 
+  group_by(parametro) %>% 
+  summarise(ee_boot = sd(estimador_boot)) 
+
+bind_cols(est_mle, error_est) %>% 
+  mutate(across(where(is.numeric), round, 3)) %>% 
+  select(parametro, estimador, ee_boot)
+```
+
+Mostrando el histograma tanto de sigma como de la media:
+
+```{r}
+reps_boot %>% 
+  ggplot(aes(x = estimador_boot)) +
+  geom_histogram()+
+  facet_wrap(~parametro, scales = "free")+
+  theme_minimal()
+```
+
+
+
+
+

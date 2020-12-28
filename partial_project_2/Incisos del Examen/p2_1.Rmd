@@ -1,0 +1,169 @@
+# 2.1 Bootstrap paramétrico
+
+** Escribe la función de log-verosimilitud y calcula el estimador de máxima verosimilitud para $\sigma^2$.  Supongamos que observamos los datos `x` (en la carpeta datos), ¿Cuál es tu estimación de la varianza?**
+
+Al calcular analíticamente la función de log verosimilitud se considera la likelihood y prior de las funciones. De esta forma:
+
+La normal sigue la siguiente distribución:
+$$
+f(x) = \frac{1}{\sqrt{2\pi \sigma^2}} \exp\Bigg(\frac{1}{2\sigma^2}(x -\mu)^2\Bigg)
+$$
+
+De manera que, dada una muestra $x_1, x_2, x_3, ..., x_n$, se puede escribir la Likelihood de la siguiente forma: 
+
+$$
+L(x) = \frac{1}{ ( 2\pi \sigma^2)^{n/2}} \exp(\frac{1}{2\sigma^2}\sum_i(x_i -\mu)^2)
+$$
+
+Por lo tanto, usando $a = \sigma^2$ es intuitivo expresar la log-likelihood como:
+$$
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(\sigma^2) - \frac{1}{2\sigma^2}\sum_i (x_i-\mu)^2 \\
+l(x) = -\frac{n}{2} log(2\pi) - \frac{n}{2}log(a) - \frac{1}{2a}\sum_i (x_i-\mu)^2 
+$$
+Al derivarparcialmente con respecto a $\sigma^2$ e igualando a 0, obtenemos la siguiente expresión:
+$$
+\frac{\partial l(x)}{\partial a} = -\frac{n}{2a} - \Bigg[ \frac{1}{2}\sum_i (x_i-\mu)^2 \Bigg]\Bigg[ -\frac{1}{a^2}  \Bigg] \\
+-\frac{n}{2a} + \Bigg[ \frac{1}{2a^2}\sum_i (x_i-\mu)^2 \Bigg] \\
+\frac{1}{2a} \Bigg[ \frac{1}{a} \sum_i (x_i-\mu)^2 - n \Bigg] = 0 \\
+a = \frac{\sum_i (x_i-\mu)^2}{n}
+$$
+
+De esta forma, el estimador MLE de $\sigma$ lo podemos expresar como:
+
+$$
+\hat{\sigma}^2 = \frac{\sum_i (x_i-\mu)^2}{n}
+$$
+
+Para encontrarla con la función optim como vimos en clase, en lugar de analíticamente, hacemos uso de la funcion crear_log_p. Esta funcion nos ayuda a generar las funciones log_p. 
+
+```{r}
+library(tidyverse)
+# La función crear_log_p crea una funcion llamada log_p que recibe dos parámetros (media, sigma) tal que se estandariza la funcion y se calcula su respectiva log verosimilitud
+crear_log_p <- function(x){
+  log_p <- function(pars){
+    media = pars[1]
+    desv_est = pars[2]
+    z <- (x - media) / desv_est
+    log_verosim <- -(log(desv_est) +  0.5 * mean(z^2))
+    log_verosim
+  }  
+  log_p
+}
+```
+
+Con esto procedemos a cargar los datos y optimizarlo con la función optim:
+
+```{r}
+load("data/x.RData")
+muestra <- x
+
+var_sesgada <- sum((x-mean(x))^2)/length(x)
+var_insesgada <- sum((x-mean(x))^2)/(length(x)-1)
+var(x)
+
+log_p <- crear_log_p(muestra)
+
+res <- 
+  optim(
+    par = c(0, 0.5),
+    fn = log_p, 
+    control = list(fnscale = -1, maxit = 10000), 
+    method = "Nelder-Mead"
+    )
+
+est_mle <- 
+  tibble(
+    parametro = c("media", "sigma"), 
+    estimador = res$par
+    ) %>% 
+  column_to_rownames(var = "parametro")
+```
+
+Al comparar el estimador que calculamos analíticamente con el proporcionado con la función optim, vemos que solamente hay una diferencia de:
+
+```{r}
+sqrt(var_sesgada)-res$par[2]
+```
+
+Cuando se usa función *var* de R, nos toma la segunda forma que es la versión insesgada. Pero en este ejemplo, nosotros estaremos ocupando la primera debido a que es el que tenemos como resultado del MLE.
+
+** Aproxima el error estándar de la estimación usando __bootstrap paramétrico__ y realiza un histograma de las replicaciones bootstrap.**
+
+Para el aproximar el error estándar usando boostrap paramétrico hacemos uso de las funciones generadas en clase (con sus respectivas modificaciones)
+
+```{r}
+# simular_modelo encuentra n número de observaciones de una distribución normal con la media y sigma proporcionada
+simular_modelo <- function(n, media, sigma){
+  rnorm(n, media, sigma)
+}
+```
+
+
+```{r}
+# la función rep_boot repite 
+rep_boot <- function(rep, crear_log_p, est_mle, n){
+  muestra_bootstrap <- 
+    simular_modelo(
+      n = length(muestra), 
+      media = est_mle["media", "estimador"], 
+      sigma = est_mle["sigma", "estimador"]
+      )
+  
+  log_p_boot <- crear_log_p(muestra_bootstrap)
+  
+  # optimizamos
+  
+  res_boot <- 
+    optim(
+      par = c(0, 0.5), 
+      fn = log_p_boot, 
+      control = list(fnscale = -1, maxit = 1000), 
+      method = "Nelder-Mead"
+      )
+  
+  try(if(res_boot$convergence != 0) stop("No se alcanzó convergencia."))
+  tibble(parametro = c("media", "sigma"), estimador_boot = res_boot$par) 
+}
+```
+
+Ahora hay que hacer las replicas bootstrap. Generamos 10,000 replicas bootstrap para tener obtener la distribución.
+
+```{r}
+reps_boot <- map_dfr(
+  .x = 1:5000, 
+  .f = ~ rep_boot(.x, crear_log_p, est_mle, n = length(muestra)), 
+  rep = ".id"
+  ) 
+
+reps_boot %>% nrow()
+```
+
+```{r}
+error_est <- 
+  reps_boot %>% 
+  group_by(parametro) %>% 
+  summarise(ee_boot = sd(estimador_boot)) 
+
+bind_cols(est_mle, error_est) %>% 
+  mutate(across(where(is.numeric), round, 3)) %>% 
+  select(parametro, estimador, ee_boot)
+```
+
+Mostrando el histograma tanto de sigma como de la media:
+
+```{r}
+reps_boot %>% 
+  ggplot(aes(x = estimador_boot)) +
+  geom_histogram()+
+  facet_wrap(~parametro, scales = "free")+
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
+

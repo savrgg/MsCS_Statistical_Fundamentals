@@ -1,0 +1,43 @@
+## 1. Pruebas de hipótesis
+
+De acuerdo a una encuesta en EUA, 26% de los residentes adultos de Illinois han 
+terminado la preparatoria. Un investigador sospecha que este porcentaje es
+menor en un condado particular del estado. Obtiene una muestra aleatoria de 
+dicho condado y encuentra que 69 de 310 personas en la muestra han completado
+la preparatoria. Estos resultados soportan su hipótesis? (describe tu elección de
+prueba de hipótesis, valor p y conclusión).
+
+Sea $p$ la proporción de adultos que han terminado la preparatoria, proponemos la
+siguiente prueba de hipótesis:
+
+$H_0: p \geq 0.26$
+
+$H_A: p <  0.26$
+
+Aprovechando las características del estimador de proporciones (asintóticamente normal), aplicamos una prueba Wald. 
+```{r}
+# Calcular los elementos de la prueba de Wald
+p_hat = 69/310
+ee = sqrt(p_hat * (1 - p_hat) / 310)
+# prueba
+w = (p_hat - 0.26)/ee
+w
+```
+
+Estimamos el valor p a 1 cola pues buscamos demostrar que la proporción de residentes adultos de Illinois con preparatoria terminada es menor a 26%.
+
+```{r}
+valor_p <- (1 - pnorm(abs(w)))
+valor_p * 100
+```
+
+Y tenemos que con 5.6% de probabilidad el valor observado de 22% parece fortuito como para sostener la hipótesis nula. Es decir, tenemos evidencia suficiente para rechazar que la proporción de residentes adultos de Illinois con preparatoria terminada es mayor o igual a 26%. 
+
+Cabe mencionar que realizamos la prueba aprovechando los resultados del Teorema Central del Límite (TCL) y la normalidad del estimador. Si realizamos la prueba con cálculo exacto observamos:
+
+```{r}
+valor_p <- pbinom(q = 69, size = 310, prob = 0.26, lower.tail = T)
+valor_p * 100
+```
+
+La probabilidad de observar 69 (o menos) de 310 adultos con preparatoria terminada es de 7.3%, lo cual confirma el resultado de la prueba anterior. La hipótesis nula es incorrecta.
